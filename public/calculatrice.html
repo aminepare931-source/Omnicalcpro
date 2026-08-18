@@ -352,3 +352,265 @@ h3{margin:2px 0 6px;font-size:15px}
 </div>
 <div class="tip" id="tip"></div>
 <div class="toast" id="toast"></div>
+<script>
+/* =========================================================================
+   NEXUS CALC — moteur mathématique (tokenizer → shunting-yard → AST)
+   Aucune utilisation de eval().
+   ========================================================================= */
+const CONST = { pi: Math.PI, e: Math.E, inf: Infinity };
+const FN1 = {
+  sin:1,cos:1,tan:1,asin:1,acos:1,atan:1,sinh:1,cosh:1,tanh:1,
+  ln:1,log:1,log2:1,sqrt:1,cbrt:1,abs:1,exp:1,sign:1,floor:1,ceil:1,round:1
+};
+const FN2 = { root:1, mod:1, pow:1, max:1, min:1, log:2 };
+const OPS = {
+  '+':{p:1,a:'L'}, '-':{p:1,a:'L'}, '*':{p:2,a:'L'}, '/':{p:2,a:'L'},
+  '%':{p:2,a:'L'}, '^':{p:4,a:'R'}, 'u-':{p:3,a:'R'}
+};
+let ANGLE = 'DEG'; // bascule degrés / radians
+
+/* -------- Tokenizer -------- */
+function tokenize(src){
+  const s = String(src)
+    .replace(/π/g,'pi').replace(/√/g,'sqrt').replace(/×/g,'*').replace(/÷/g,'/')
+    .replace(/−/g,'-').replace(/,/g,'.').replace(/∞/g,'inf').replace(/\s+/g,'');
+  const t=[]; let i=0;
+  while(i<s.length){
+    const c=s[i];
+    if(/[0-9.]/.test(c)){ let j=i; while(j<s.length&&/[0-9.eE]/.test(s[j])){
+        if((s[j]==='e'||s[j]==='E') && !/[0-9]/.test(s[j+1]||'') && !((s[j+1]==='-'||s[j+1]==='+')&&/[0-9]/.test(s[j+2]||''))) break;
+        if(s[j]==='e'||s[j]==='E'){ j++; if(s[j]==='-'||s[j]==='+') j++; continue; } j++; }
+      const num=s.slice(i,j); if(isNaN(parseFloat(num))) throw err("Nombre invalide : "+num);
+      t.push({t:'num',v:parseFloat(num)}); i=j; continue; }
+    if(/[a-zA-Z_]/.test(c)){ let j=i; while(j<s.length&&/[a-zA-Z_0-9]/.test(s[j])) j++;
+      t.push({t:'name',v:s.slice(i,j)}); i=j; continue; }
+    if('+-*/%^'.includes(c)){ t.push({t:'op',v:c}); i++; continue; }
+    if(c==='('||c===')'){ t.push({t:c}); i++; continue; }
+    if(c==='!'){ t.push({t:'fact'}); i++; continue; }
+    throw err("Caractère inattendu : « "+c+" »");
+  }
+  return t;
+}
+function err(m){ const e=new Error(m); e.math=true; return e; }
+
+/* -------- Shunting-yard → AST -------- */
+function parse(src){
+  const tk = tokenize(src);
+  if(!tk.length) throw err("Expression vide");
+  const out=[], ops=[]; let prev=null;
+  const popTo=(cond)=>{ while(ops.length && cond(ops[ops.length-1])) reduce(out, ops.pop()); };
+  for(let i=0;i<tk.length;i++){
+    const k=tk[i];
+    if(k.t==='num'){ out.push({k:'num',v:k.v}); prev=k; continue; }
+    if(k.t==='name'){
+      const n=k.v.toLowerCase();
+      if(tk[i+1] && tk[i+1].t==='('){ ops.push({t:'fn',v:n,args:1}); }
+      else if(n in CONST) out.push({k:'num',v:CONST[n]});
+      else if(n==='mod'){ // opérateur infixe mod
+        popTo(o=>o.t==='op'&&OPS[o.v].p>=2); ops.push({t:'op',v:'%'});
+      }
+      else out.push({k:'var',v:n});
+      prev=k; continue;
+    }
+    if(k.t==='op'){
+      const unary = k.v==='-' && (!prev || prev.t==='op' || prev.t==='(');
+      const plusU = k.v==='+' && (!prev || prev.t==='op' || prev.t==='(');
+      if(plusU){ prev=k; continue; }
+      const v = unary ? 'u-' : k.v;
+      popTo(o=>o.t==='op' && (OPS[o.v].p>OPS[v].p || (OPS[o.v].p===OPS[v].p && OPS[v].a==='L')));
+      ops.push({t:'op',v}); prev=k; continue;
+    }
+    if(k.t==='fact'){ out.push({k:'fact',a:out.pop()}); prev=k; continue; }
+    if(k.t==='('){ ops.push({t:'('}); prev=k; continue; }
+    if(k.t===')'){
+      popTo(o=>o.t!=='(');
+      if(!ops.length) throw err("Parenthèse fermante en trop");
+      ops.pop();
+      if(ops.length && ops[ops.length-1].t==='fn') reduce(out, ops.pop());
+      prev=k; continue;
+    }
+  }
+  while(ops.length){ const o=ops.pop(); if(o.t==='(') throw err("Parenthèse non fermée"); reduce(out,o); }
+  if(out.length!==1) throw err("Syntaxe invalide");
+  return out[0];
+}
+function reduce(out,o){
+  if(o.t==='op'){
+    if(o.v==='u-'){ const a=out.pop(); if(!a) throw err("Syntaxe invalide"); out.push({k:'neg',a}); return; }
+    const b=out.pop(), a=out.pop(); if(!a||!b) throw err("Syntaxe invalide");
+    out.push({k:'op',v:o.v,a,b}); return;
+  }
+  if(o.t==='fn'){ const a=out.pop(); if(!a) throw err("Argument manquant pour "+o.v); out.push({k:'fn',v:o.v,a}); }
+}
+/* -------- Évaluation -------- */
+const toRad = x => ANGLE==='DEG' ? x*Math.PI/180 : x;
+const fromRad = x => ANGLE==='DEG' ? x*180/Math.PI : x;
+function fact(n){
+  if(n<0||Math.floor(n)!==n) { // Gamma (Lanczos) pour non-entiers
+    return gamma(n+1);
+  }
+  if(n>170) return Infinity;
+  let r=1; for(let i=2;i<=n;i++) r*=i; return r;
+}
+function gamma(z){
+  const g=[676.5203681218851,-1259.1392167224028,771.32342877765313,-176.61502916214059,
+    12.507343278686905,-0.13857109526572012,9.9843695780195716e-6,1.5056327351493116e-7];
+  if(z<0.5) return Math.PI/(Math.sin(Math.PI*z)*gamma(1-z));
+  z-=1; let x=0.99999999999980993;
+  for(let i=0;i<g.length;i++) x+=g[i]/(z+i+1);
+  const t=z+g.length-0.5;
+  return Math.sqrt(2*Math.PI)*Math.pow(t,z+0.5)*Math.exp(-t)*x;
+}
+function evalAst(n, vars){
+  vars = vars||{};
+  switch(n.k){
+    case 'num': return n.v;
+    case 'var': {
+      const v=n.v;
+      if(v in vars) return vars[v];
+      if(v in CONST) return CONST[v];
+      throw err("Variable inconnue : "+v);
+    }
+    case 'neg': return -evalAst(n.a,vars);
+    case 'fact': return fact(evalAst(n.a,vars));
+    case 'op': {
+      const a=evalAst(n.a,vars), b=evalAst(n.b,vars);
+      switch(n.v){
+        case '+': return a+b; case '-': return a-b; case '*': return a*b;
+        case '/': if(b===0) throw err("Division par zéro impossible"); return a/b;
+        case '%': if(b===0) throw err("Modulo par zéro impossible"); return a%b;
+        case '^': return Math.pow(a,b);
+      }
+      break;
+    }
+    case 'fn': {
+      const x=evalAst(n.a,vars);
+      switch(n.v){
+        case 'sin': return Math.sin(toRad(x)); case 'cos': return Math.cos(toRad(x)); case 'tan': return Math.tan(toRad(x));
+        case 'asin': if(x<-1||x>1) throw err("asin défini sur [-1,1]"); return fromRad(Math.asin(x));
+        case 'acos': if(x<-1||x>1) throw err("acos défini sur [-1,1]"); return fromRad(Math.acos(x));
+        case 'atan': return fromRad(Math.atan(x));
+        case 'sinh': return Math.sinh(x); case 'cosh': return Math.cosh(x); case 'tanh': return Math.tanh(x);
+        case 'ln': if(x<=0) throw err("ln défini sur x > 0"); return Math.log(x);
+        case 'log': if(x<=0) throw err("log défini sur x > 0"); return Math.log10(x);
+        case 'log2': return Math.log2(x);
+        case 'sqrt': if(x<0) throw err("Racine d'un nombre négatif"); return Math.sqrt(x);
+        case 'cbrt': return Math.cbrt(x);
+        case 'abs': return Math.abs(x); case 'exp': return Math.exp(x); case 'sign': return Math.sign(x);
+        case 'floor': return Math.floor(x); case 'ceil': return Math.ceil(x); case 'round': return Math.round(x);
+        case 'fact': return fact(x);
+      }
+      throw err("Fonction inconnue : "+n.v);
+    }
+  }
+  throw err("Expression invalide");
+}
+const compute = (src, vars) => evalAst(parse(src), vars);
+function compile(src){ const ast=parse(src); return x=>evalAst(ast,{x}); }
+
+/* =========================================================================
+   DÉRIVATION SYMBOLIQUE (manipulation d'AST + simplification)
+   ========================================================================= */
+const N = v => ({k:'num',v});
+const isN = (n,v)=> n.k==='num' && (v===undefined || n.v===v);
+function add(a,b){ if(isN(a,0))return b; if(isN(b,0))return a; if(a.k==='num'&&b.k==='num')return N(a.v+b.v); return {k:'op',v:'+',a,b}; }
+function sub(a,b){ if(isN(b,0))return a; if(a.k==='num'&&b.k==='num')return N(a.v-b.v); if(isN(a,0))return {k:'neg',a:b}; return {k:'op',v:'-',a,b}; }
+function mul(a,b){ if(isN(a,0)||isN(b,0))return N(0); if(isN(a,1))return b; if(isN(b,1))return a;
+  if(a.k==='num'&&b.k==='num')return N(a.v*b.v); return {k:'op',v:'*',a,b}; }
+function div(a,b){ if(isN(a,0))return N(0); if(isN(b,1))return a; if(a.k==='num'&&b.k==='num'&&b.v!==0)return N(a.v/b.v); return {k:'op',v:'/',a,b}; }
+function pw(a,b){ if(isN(b,0))return N(1); if(isN(b,1))return a; return {k:'op',v:'^',a,b}; }
+const fn = (v,a)=>({k:'fn',v,a});
+
+function deriv(n){
+  switch(n.k){
+    case 'num': return N(0);
+    case 'var': return n.v==='x' ? N(1) : N(0);
+    case 'neg': return {k:'neg',a:deriv(n.a)};
+    case 'fact': return N(0);
+    case 'op': {
+      const {a,b}=n, da=deriv(a), db=deriv(b);
+      if(n.v==='+') return add(da,db);
+      if(n.v==='-') return sub(da,db);
+      if(n.v==='*') return add(mul(da,b),mul(a,db));                       // produit
+      if(n.v==='/') return div(sub(mul(da,b),mul(a,db)), pw(b,N(2)));      // quotient
+      if(n.v==='%') return da;
+      if(n.v==='^'){
+        if(b.k==='num') return mul(mul(N(b.v),pw(a,N(b.v-1))),da);          // puissance
+        // cas général : (a^b)' = a^b · (b'·ln a + b·a'/a)
+        return mul(pw(a,b), add(mul(db,fn('ln',a)), div(mul(b,da),a)));
+      }
+      break;
+    }
+    case 'fn': {
+      const u=n.a, du=deriv(u);
+      const chain = g => mul(g,du);                                        // règle de chaîne
+      switch(n.v){
+        case 'sin': return chain(fn('cos',u));
+        case 'cos': return chain({k:'neg',a:fn('sin',u)});
+        case 'tan': return chain(div(N(1),pw(fn('cos',u),N(2))));
+        case 'asin': return chain(div(N(1),fn('sqrt',sub(N(1),pw(u,N(2))))));
+        case 'acos': return chain({k:'neg',a:div(N(1),fn('sqrt',sub(N(1),pw(u,N(2)))))});
+        case 'atan': return chain(div(N(1),add(N(1),pw(u,N(2)))));
+        case 'sinh': return chain(fn('cosh',u));
+        case 'cosh': return chain(fn('sinh',u));
+        case 'tanh': return chain(sub(N(1),pw(fn('tanh',u),N(2))));
+        case 'exp': return chain(fn('exp',u));
+        case 'ln': return chain(div(N(1),u));
+        case 'log': return chain(div(N(1),mul(u,N(Math.LN10))));
+        case 'log2': return chain(div(N(1),mul(u,N(Math.LN2))));
+        case 'sqrt': return chain(div(N(1),mul(N(2),fn('sqrt',u))));
+        case 'cbrt': return chain(div(N(1),mul(N(3),pw(fn('cbrt',u),N(2)))));
+        case 'abs': return chain(fn('sign',u));
+        case 'sign': case 'floor': case 'ceil': case 'round': return N(0);
+      }
+      throw err("Dérivée non implémentée pour "+n.v);
+    }
+  }
+  throw err("Dérivation impossible");
+}
+/* Impression lisible d'un AST */
+function toStr(n,prec){
+  prec = prec||0;
+  const wrap=(s,p)=> p<prec ? '('+s+')' : s;
+  switch(n.k){
+    case 'num': return fmtNum(n.v);
+    case 'var': return n.v;
+    case 'neg': return wrap('-'+toStr(n.a,3),1);
+    case 'fact': return toStr(n.a,5)+'!';
+    case 'fn': return n.v+'('+toStr(n.a,0)+')';
+    case 'op': {
+      const p={'+':1,'-':1,'*':2,'/':2,'%':2,'^':4}[n.v];
+      const sym = n.v==='*' ? '·' : n.v==='%' ? ' mod ' : n.v;
+      return wrap(toStr(n.a,p)+sym+toStr(n.b, n.v==='+'?p:p+1), p);
+    }
+  }
+  return '?';
+}
+/* Simplification récursive (constantes + neutres) */
+function simplify(n){
+  if(n.k==='op'){
+    const a=simplify(n.a), b=simplify(n.b);
+    switch(n.v){ case '+':return add(a,b); case '-':return sub(a,b); case '*':return mul(a,b);
+      case '/':return div(a,b); case '^':return pw(a,b); default:return {k:'op',v:n.v,a,b}; }
+  }
+  if(n.k==='neg'){ const a=simplify(n.a); if(a.k==='num') return N(-a.v); return {k:'neg',a}; }
+  if(n.k==='fn'){ const a=simplify(n.a); return {k:'fn',v:n.v,a}; }
+  return n;
+}
+/* Primitives usuelles connues (bonus) */
+function primitive(src){
+  const t=src.replace(/\s/g,'');
+  const table={'x':'x²/2','x^2':'x³/3','x^3':'x⁴/4','1/x':'ln|x|','sin(x)':'-cos(x)','cos(x)':'sin(x)',
+    'exp(x)':'exp(x)','e^x':'e^x','ln(x)':'x·ln(x) - x','sqrt(x)':'(2/3)·x^(3/2)','tan(x)':'-ln|cos(x)|',
+    '1/(1+x^2)':'atan(x)'};
+  return table[t]||null;
+}
+/* Formatage numérique */
+function fmtNum(v){
+  if(typeof v!=='number'||!isFinite(v)) return v>0?'∞':(v<0?'-∞':'Indéfini');
+  if(Object.is(v,-0)) v=0;
+  if(v!==0 && (Math.abs(v)<1e-9 || Math.abs(v)>=1e12)) return v.toExponential(6).replace('e','×10^');
+  const r = Math.round(v*1e10)/1e10;
+  return String(r);
+}
+</script>
