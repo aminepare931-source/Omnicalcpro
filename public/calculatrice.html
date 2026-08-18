@@ -805,10 +805,6 @@ const Y2s=(y,cv)=> cv._h/2 - (y-view.cy)*view.sy;
 const s2X=(px,cv)=> view.cx + (px-cv._w/2)/view.sx;
 const s2Y=(py,cv)=> view.cy - (py-cv._h/2)/view.sy;
 
-function niceStep(pxPerUnit){
-  const target=80/pxPerUnit; const p=Math.pow(10,Math.floor(Math.log10(target)));
-  const m=target/p; return (m<1.5?1:m<3?2:m<7:5)*p;
-}
 function step(pxPerUnit){
   const target=80/pxPerUnit, p=Math.pow(10,Math.floor(Math.log10(target))), m=target/p;
   return (m<1.5?1:m<3?2:m<7?5:10)*p;
@@ -1256,3 +1252,267 @@ $('#regGo').onclick=()=>{
 };
 $('#regData').value=LS.get('regData',$('#regData').value);
 </script>
+<script>
+/* =========================================================================
+   MATRICES — LU pour le déterminant, QR (itération) pour valeurs propres
+   ========================================================================= */
+function buildGrid(id,rId,cId,store){
+  const r=Math.max(1,Math.min(10,+$(rId).value||1)), c=Math.max(1,Math.min(10,+$(cId).value||1));
+  const g=$(id); g.style.gridTemplateColumns=`repeat(${c},1fr)`; g.innerHTML='';
+  const prev=LS.get(store,[]);
+  for(let i=0;i<r;i++) for(let j=0;j<c;j++){
+    const inp=document.createElement('input');
+    inp.value=(prev[i]&&prev[i][j]!==undefined)?prev[i][j]:(i===j?1:0);
+    inp.oninput=()=>LS.set(store,readGrid(id,r,c));
+    g.appendChild(inp);
+  }
+  LS.set(store,readGrid(id,r,c));
+}
+function readGrid(id,r,c){
+  const v=[...$(id).querySelectorAll('input')].map(i=>parseFloat(i.value.replace(',','.'))||0);
+  const m=[]; for(let i=0;i<r;i++) m.push(v.slice(i*c,(i+1)*c)); return m;
+}
+const getA=()=>readGrid('#gA',+$('#ar').value,+$('#ac').value);
+const getB=()=>readGrid('#gB',+$('#br').value,+$('#bc').value);
+['#ar','#ac'].forEach(s=>$(s).oninput=()=>buildGrid('#gA','#ar','#ac','matA'));
+['#br','#bc'].forEach(s=>$(s).oninput=()=>buildGrid('#gB','#br','#bc','matB'));
+buildGrid('#gA','#ar','#ac','matA'); buildGrid('#gB','#br','#bc','matB');
+
+const M={
+  add:(A,B)=>A.map((r,i)=>r.map((v,j)=>v+B[i][j])),
+  sub:(A,B)=>A.map((r,i)=>r.map((v,j)=>v-B[i][j])),
+  mul:(A,B)=>A.map(r=>B[0].map((_,j)=>r.reduce((s,v,k)=>s+v*B[k][j],0))),
+  scal:(A,k)=>A.map(r=>r.map(v=>v*k)),
+  T:A=>A[0].map((_,j)=>A.map(r=>r[j])),
+  det(A){ // décomposition LU avec pivot partiel
+    const n=A.length, m=A.map(r=>[...r]); let det=1;
+    for(let i=0;i<n;i++){
+      let p=i; for(let k=i+1;k<n;k++) if(Math.abs(m[k][i])>Math.abs(m[p][i])) p=k;
+      if(Math.abs(m[p][i])<1e-14) return 0;
+      if(p!==i){ [m[p],m[i]]=[m[i],m[p]]; det=-det; }
+      det*=m[i][i];
+      for(let k=i+1;k<n;k++){ const f=m[k][i]/m[i][i]; for(let j=i;j<n;j++) m[k][j]-=f*m[i][j]; }
+    }
+    return det;
+  },
+  inv(A){ // Gauss-Jordan
+    const n=A.length, m=A.map((r,i)=>[...r,...r.map((_,j)=>i===j?1:0)]);
+    for(let i=0;i<n;i++){
+      let p=i; for(let k=i+1;k<n;k++) if(Math.abs(m[k][i])>Math.abs(m[p][i])) p=k;
+      if(Math.abs(m[p][i])<1e-12) throw err("Matrice singulière : elle n'est pas inversible");
+      [m[p],m[i]]=[m[i],m[p]];
+      const d=m[i][i]; for(let j=0;j<2*n;j++) m[i][j]/=d;
+      for(let k=0;k<n;k++){ if(k===i) continue; const f=m[k][i];
+        for(let j=0;j<2*n;j++) m[k][j]-=f*m[i][j]; }
+    }
+    return m.map(r=>r.slice(n));
+  },
+  rank(A){
+    const m=A.map(r=>[...r]), R=m.length, C=m[0].length; let rank=0;
+    for(let c=0,r=0;c<C&&r<R;c++){
+      let p=r; for(let k=r;k<R;k++) if(Math.abs(m[k][c])>Math.abs(m[p][c])) p=k;
+      if(Math.abs(m[p][c])<1e-10) continue;
+      [m[p],m[r]]=[m[r],m[p]];
+      for(let k=0;k<R;k++){ if(k===r) continue; const f=m[k][c]/m[r][c];
+        for(let j=c;j<C;j++) m[k][j]-=f*m[r][j]; }
+      r++; rank++;
+    }
+    return rank;
+  },
+  trace:A=>A.reduce((s,r,i)=>s+r[i],0),
+  eig(A){ // algorithme QR (Gram-Schmidt) itératif
+    const n=A.length; let m=A.map(r=>[...r]);
+    for(let it=0;it<600;it++){
+      const {Q,R}=qr(m); m=M.mul(R,Q);
+    }
+    const vals=m.map((r,i)=>r[i]);
+    const vecs=vals.map(l=>{ // vecteur propre par résolution (A-λI)v≈0
+      try{ const S=A.map((r,i)=>r.map((v,j)=>v-(i===j?l+1e-7:0)));
+        let v=new Array(n).fill(1);
+        for(let k=0;k<80;k++){ v=M.mul(M.inv(S),v.map(x=>[x])).map(r=>r[0]);
+          const nn=Math.hypot(...v)||1; v=v.map(x=>x/nn); }
+        return v;
+      }catch(e){ return null; }
+    });
+    return {vals,vecs};
+  }
+};
+function qr(A){
+  const n=A.length, cols=M.T(A), Q=[], R=Array.from({length:n},()=>new Array(n).fill(0));
+  for(let j=0;j<n;j++){
+    let v=[...cols[j]];
+    for(let i=0;i<j;i++){ const d=Q[i].reduce((s,q,k)=>s+q*cols[j][k],0); R[i][j]=d;
+      v=v.map((x,k)=>x-d*Q[i][k]); }
+    const nn=Math.hypot(...v)||1e-14; R[j][j]=nn; Q.push(v.map(x=>x/nn));
+  }
+  return {Q:M.T(Q),R};
+}
+const fmtMat=A=>A.map(r=>'[ '+r.map(v=>fmtNum(Math.abs(v)<1e-12?0:v).padStart(9)).join('  ')+' ]').join('\n');
+const latexMat=A=>'\\begin{pmatrix}\n'+A.map(r=>r.map(v=>fmtNum(v)).join(' & ')).join(' \\\\\n')+'\n\\end{pmatrix}';
+let lastMat=null;
+$$('[data-mop]').forEach(b=>b.onclick=()=>{
+  const A=getA(), B=getB(), op=b.dataset.mop; const out=$('#mRes'); lastMat=null;
+  try{
+    let r;
+    const square=m=>{ if(m.length!==m[0].length) throw err("Opération réservée aux matrices carrées"); };
+    const same=()=>{ if(A.length!==B.length||A[0].length!==B[0].length) throw err("A et B doivent avoir la même taille"); };
+    switch(op){
+      case 'add': same(); lastMat=r=M.add(A,B); out.textContent='A + B =\n'+fmtMat(r); break;
+      case 'sub': same(); lastMat=r=M.sub(A,B); out.textContent='A − B =\n'+fmtMat(r); break;
+      case 'mul': if(A[0].length!==B.length) throw err("Colonnes de A ≠ lignes de B");
+        lastMat=r=M.mul(A,B); out.textContent='A × B =\n'+fmtMat(r); break;
+      case 'scal': { const k=compute($('#mK').value||'1'); lastMat=r=M.scal(A,k);
+        out.textContent=`${fmtNum(k)}·A =\n`+fmtMat(r); break; }
+      case 'tA': lastMat=r=M.T(A); out.textContent='Aᵀ =\n'+fmtMat(r); break;
+      case 'det': square(A); out.textContent='det(A) = '+fmtNum(M.det(A))+'   (décomposition LU)'; break;
+      case 'inv': square(A); lastMat=r=M.inv(A); out.textContent='A⁻¹ =\n'+fmtMat(r); break;
+      case 'rank': out.textContent='rang(A) = '+M.rank(A); break;
+      case 'trace': square(A); out.textContent='tr(A) = '+fmtNum(M.trace(A)); break;
+      case 'eig': { square(A); const {vals,vecs}=M.eig(A);
+        out.textContent='Valeurs propres (QR) :\n'+vals.map((v,i)=>
+          `λ${i+1} = ${fmtNum(v)}`+(vecs[i]?`   v${i+1} = ( ${vecs[i].map(x=>fmtNum(x)).join(' , ')} )`:'')).join('\n');
+        break; }
+    }
+  }catch(e){
+    out.textContent='⚠︎ '+(e.math?e.message:"Opération impossible");
+    out.classList.add('shake'); setTimeout(()=>out.classList.remove('shake'),420);
+    toast(e.math?e.message:"Opération impossible",true);
+  }
+});
+$('#mLatex').onclick=async()=>{
+  const A=lastMat||getA();
+  try{ await navigator.clipboard.writeText(latexMat(A)); toast('LaTeX copié ✓'); }catch(e){ toast("Copie impossible",true); }
+};
+
+/* =========================================================================
+   PROGRAMMATION & BITS
+   ========================================================================= */
+function syncBase(from){
+  const g={dec:$('#pDec'),hex:$('#pHex'),bin:$('#pBin'),oct:$('#pOct')};
+  let v=NaN;
+  try{
+    if(from==='dec') v=parseInt(g.dec.value.trim(),10);
+    if(from==='hex') v=parseInt(g.hex.value.trim().replace(/^0x/i,''),16);
+    if(from==='bin') v=parseInt(g.bin.value.trim().replace(/^0b/i,''),2);
+    if(from==='oct') v=parseInt(g.oct.value.trim().replace(/^0o/i,''),8);
+  }catch(e){}
+  if(!isFinite(v)){ ['hex','bin','oct','dec'].filter(k=>k!==from).forEach(k=>g[k].value=''); return; }
+  const neg=v<0, a=Math.abs(Math.trunc(v)), sg=neg?'-':'';
+  if(from!=='dec') g.dec.value=sg+a;
+  if(from!=='hex') g.hex.value=sg+a.toString(16).toUpperCase();
+  if(from!=='bin') g.bin.value=sg+a.toString(2);
+  if(from!=='oct') g.oct.value=sg+a.toString(8);
+}
+['dec','hex','bin','oct'].forEach(k=>$('#p'+k[0].toUpperCase()+k.slice(1)).addEventListener('input',()=>syncBase(k)));
+syncBase('dec');
+$('#bitGo').onclick=()=>{
+  const a=Math.trunc(+$('#bitA').value||0), b=Math.trunc(+$('#bitB').value||0), op=$('#bitOp').value;
+  let r;
+  switch(op){ case 'AND': r=a&b; break; case 'OR': r=a|b; break; case 'XOR': r=a^b; break;
+    case 'NOT A': r=~a; break; case 'A << B': r=a<<b; break; default: r=a>>b; }
+  $('#bitRes').textContent=`${op} → ${r}\nbin : ${(r>>>0).toString(2)}\nhex : 0x${(r>>>0).toString(16).toUpperCase()}\noct : 0o${(r>>>0).toString(8)}`;
+};
+
+/* =========================================================================
+   FINANCE
+   ========================================================================= */
+const FIN_LABELS={
+  evo:['Valeur initiale','Valeur finale','—'],
+  tva:['Montant HT','Taux TVA (%)','—'],
+  tri:['a','b','c  (x = b·c/a)'],
+  si:['Capital','Taux annuel (%)','Durée (années)'],
+  ci:['Capital','Taux annuel (%)','Durée (années)']
+};
+function finLabels(){ const L=FIN_LABELS[$('#finOp').value];
+  $('#lf1').textContent=L[0]; $('#lf2').textContent=L[1]; $('#lf3').textContent=L[2]; }
+$('#finOp').onchange=finLabels; finLabels();
+$('#finGo').onclick=()=>{
+  const n=s=>{ try{ return compute($(s).value||'0'); }catch(e){ return NaN; } };
+  const a=n('#f1'), b=n('#f2'), c=n('#f3'); const op=$('#finOp').value; let t='';
+  try{
+    if([a,b].some(v=>!isFinite(v))) throw err("Valeurs invalides");
+    if(op==='evo'){ if(a===0) throw err("La valeur initiale ne peut pas être 0");
+      const e=(b-a)/a*100; t=`Évolution : ${fmtNum(e)} %  (${e>=0?'hausse':'baisse'})\nCoefficient : ${fmtNum(b/a)}`; }
+    if(op==='tva'){ const tva=a*b/100; t=`TVA = ${fmtNum(tva)}\nTTC = ${fmtNum(a+tva)}\nHT (si a était TTC) = ${fmtNum(a/(1+b/100))}`; }
+    if(op==='tri'){ if(a===0) throw err("a ne peut pas être 0"); t=`x = ${fmtNum(b*c/a)}`; }
+    if(op==='si'){ const i=a*b/100*c; t=`Intérêts simples = ${fmtNum(i)}\nCapital final = ${fmtNum(a+i)}`; }
+    if(op==='ci'){ const f=a*Math.pow(1+b/100,c);
+      t=`Capital final = ${fmtNum(f)}\nIntérêts composés = ${fmtNum(f-a)}\nTaux global = ${fmtNum((f/a-1)*100)} %`; }
+    $('#finRes').textContent=t;
+  }catch(e){ $('#finRes').textContent='⚠︎ '+e.message; toast(e.message,true); }
+};
+
+/* =========================================================================
+   ÉQUATIONS DIFFÉRENTIELLES : Euler, Euler amélioré (Heun), RK4
+   ========================================================================= */
+$('#odeH').oninput=e=>$('#odeHv').textContent=e.target.value;
+function solveODE(f,x0,y0,b,h,method){
+  const pts=[[x0,y0]]; let x=x0,y=y0;
+  const steps=Math.min(200000,Math.max(1,Math.ceil(Math.abs(b-x0)/h)));
+  const sgn=b>=x0?1:-1, H=h*sgn;
+  for(let i=0;i<steps;i++){
+    let ny;
+    const k1=f(x,y);
+    if(!isFinite(k1)) break;
+    if(method==='euler') ny=y+H*k1;
+    else if(method==='heun'){ const k2=f(x+H,y+H*k1); ny=y+H/2*(k1+k2); }
+    else { const k2=f(x+H/2,y+H/2*k1), k3=f(x+H/2,y+H/2*k2), k4=f(x+H,y+H*k3);
+      ny=y+H/6*(k1+2*k2+2*k3+k4); }
+    if(!isFinite(ny)||Math.abs(ny)>1e12){ pts.push([x+H,ny]); break; } // EDO instable
+    x+=H; y=ny; pts.push([x,y]);
+  }
+  return pts;
+}
+$('#odeGo').onclick=()=>{
+  let ast;
+  try{ ast=parse($('#odeF').value); }catch(e){ return toast(e.math?e.message:"f(x,y) invalide",true); }
+  const f=(x,y)=>{ try{ return evalAst(ast,{x,y}); }catch(e){ return NaN; } };
+  let x0,y0,b,h;
+  try{ x0=compute($('#odeX0').value||'0'); y0=compute($('#odeY0').value||'0'); b=compute($('#odeB').value||'1'); }
+  catch(e){ return toast("Paramètres invalides",true); }
+  h=+$('#odeH').value;
+  const sols=[['Euler','euler',css('--accent2')],['Euler amélioré','heun',css('--accent3')],['RK4','rk4',css('--accent')]]
+    .map(([name,m,color])=>({name,color,pts:solveODE(f,x0,y0,b,h,m)}));
+  const unstable=sols.some(s=>s.pts.some(p=>!isFinite(p[1])));
+  if(unstable) toast("Solution instable détectée : réduisez le pas h",true);
+  drawODE(sols,x0,b);
+  const rk=sols[2].pts, every=Math.max(1,Math.floor(rk.length/40));
+  $('#odeTab').innerHTML='<tr><th>x</th><th>Euler</th><th>Euler amélioré</th><th>RK4</th></tr>'+
+    rk.filter((_,i)=>i%every===0).map((p,i)=>{ const k=i*every;
+      return `<tr><td>${fmtNum(p[0])}</td><td>${fmtNum((sols[0].pts[k]||[])[1])}</td><td>${fmtNum((sols[1].pts[k]||[])[1])}</td><td>${fmtNum(p[1])}</td></tr>`;
+    }).join('');
+};
+function drawODE(sols,a,b){
+  const cv=$('#odeCv'); fitCanvas(cv); const ctx=cv.getContext('2d');
+  const W=cv._w,H=cv._h,pad=42;
+  const all=sols.flatMap(s=>s.pts.map(p=>p[1])).filter(isFinite);
+  let y0=Math.min(...all), y1=Math.max(...all); if(y0===y1){ y0-=1; y1+=1; }
+  const SX=x=>pad+(x-Math.min(a,b))/((Math.abs(b-a))||1)*(W-pad*2);
+  const SY=y=>H-pad-(y-y0)/((y1-y0)||1)*(H-pad*2);
+  let prog=0;
+  (function frame(){
+    prog=Math.min(1,prog+0.03);
+    ctx.clearRect(0,0,W,H);
+    ctx.strokeStyle=css('--muted'); ctx.lineWidth=1; ctx.beginPath();
+    ctx.moveTo(pad,pad/2); ctx.lineTo(pad,H-pad); ctx.lineTo(W-pad/2,H-pad); ctx.stroke();
+    ctx.fillStyle=css('--muted'); ctx.font='11px JetBrains Mono'; ctx.textAlign='left';
+    ctx.fillText('y ∈ ['+fmtNum(y0)+' ; '+fmtNum(y1)+']',pad+4,12);
+    sols.forEach((s,i)=>{
+      ctx.strokeStyle=s.color; ctx.lineWidth=2.2; ctx.setLineDash(i===2?[]:[5,4]); ctx.beginPath();
+      const n=Math.floor(s.pts.length*prog);
+      for(let k=0;k<n;k++){ const p=s.pts[k]; if(!isFinite(p[1])) break;
+        const px=SX(p[0]),py=SY(p[1]); k?ctx.lineTo(px,py):ctx.moveTo(px,py); }
+      ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle=s.color; ctx.fillText(s.name, W-pad-96, 14+i*15);
+    });
+    if(prog<1) requestAnimationFrame(frame);
+  })();
+}
+
+/* ---- Initialisation finale ---- */
+setMode(MODE);
+requestAnimationFrame(()=>{ fitCanvas($('#graph')); draw(); });
+analyse();
+</script>
+</body>
+</html>
