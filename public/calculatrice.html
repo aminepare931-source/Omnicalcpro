@@ -614,3 +614,170 @@ function fmtNum(v){
   return String(r);
 }
 </script>
+<script>
+/* =========================================================================
+   UI : modes, thème, clavier, persistance
+   ========================================================================= */
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const LS = {
+  get(k,d){ try{ const v=localStorage.getItem('nexus:'+k); return v?JSON.parse(v):d; }catch(e){ return d; } },
+  set(k,v){ try{ localStorage.setItem('nexus:'+k, JSON.stringify(v)); }catch(e){} }
+};
+let SOUND = LS.get('sound',false);
+let audioCtx=null;
+function click(){ if(!SOUND) return;
+  try{ audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)();
+    const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+    o.type='triangle'; o.frequency.value=620; g.gain.value=.06;
+    o.connect(g); g.connect(audioCtx.destination); o.start();
+    g.gain.exponentialRampToValueAtTime(.0001, audioCtx.currentTime+.08); o.stop(audioCtx.currentTime+.09);
+  }catch(e){}
+}
+function toast(msg, bad){ const t=$('#toast'); t.textContent=msg; t.className='toast on'+(bad?' bad':''); clearTimeout(t._t);
+  t._t=setTimeout(()=>t.className='toast',2400); }
+function ripple(el,ev){ const r=document.createElement('span'); r.className='ripple';
+  const b=el.getBoundingClientRect(), s=Math.max(b.width,b.height);
+  r.style.width=r.style.height=s+'px'; r.style.left=((ev.clientX||b.left+b.width/2)-b.left-s/2)+'px';
+  r.style.top=((ev.clientY||b.top+b.height/2)-b.top-s/2)+'px'; el.appendChild(r); setTimeout(()=>r.remove(),560); }
+
+/* ---- Thème ---- */
+function setTheme(t){ document.documentElement.classList.toggle('light', t==='light'); LS.set('theme',t); draw(); drawStats(); }
+$('#btnTheme').onclick=()=>{ setTheme(document.documentElement.classList.contains('light')?'dark':'light'); click(); };
+setTheme(LS.get('theme','dark'));
+$('#btnSound').onclick=e=>{ SOUND=!SOUND; LS.set('sound',SOUND); e.target.textContent='🔈 Son : '+(SOUND?'on':'off'); click(); };
+$('#btnSound').textContent='🔈 Son : '+(SOUND?'on':'off');
+
+/* ---- Modes ---- */
+let MODE = LS.get('mode',0);
+function setMode(m){
+  MODE=m; LS.set('mode',m);
+  $$('#modes button').forEach((b,i)=>b.classList.toggle('on', i===m));
+  $$('.pane').forEach((p,i)=>p.classList.toggle('on', i===m));
+  const b=$$('#modes button')[m], box=$('#modes').getBoundingClientRect(), r=b.getBoundingClientRect();
+  const pill=$('#pill'); pill.style.left=(r.left-box.left)+'px'; pill.style.width=r.width+'px';
+  if(m===1) requestAnimationFrame(()=>{ fitCanvas($('#graph')); draw(); });
+}
+$$('#modes button').forEach(b=>b.onclick=e=>{ setMode(+b.dataset.mode); ripple(b,e); click(); });
+window.addEventListener('resize',()=>{ setMode(MODE); fitCanvas($('#graph')); draw(); });
+
+/* =========================================================================
+   CALCULATRICE (modes simple & scientifique)
+   ========================================================================= */
+const SIMPLE_KEYS=[
+  ['C','warn'],['⌫','warn'],['%','op'],['÷','op'],
+  ['7'],['8'],['9'],['×','op'],
+  ['4'],['5'],['6'],['−','op'],
+  ['1'],['2'],['3'],['+','op'],
+  ['±'],['0'],['.'],['=','eq']
+];
+const SCI_KEYS=[
+  ['sin','fn'],['cos','fn'],['tan','fn'],['asin','fn'],['acos','fn'],
+  ['atan','fn'],['ln','fn'],['log','fn'],['exp','fn'],['abs','fn'],
+  ['x²','fn'],['x³','fn'],['xʸ','fn'],['√','fn'],['³√','fn'],
+  ['ʸ√x','fn'],['n!','fn'],['mod','fn'],['π','fn'],['e','fn'],
+  ['M+','fn'],['M-','fn'],['MR','fn'],['MC','fn'],['(' ,'op'],
+  [')','op'],['C','warn'],['⌫','warn'],['%','op'],['÷','op'],
+  ['7'],['8'],['9'],['×','op'],['−','op'],
+  ['4'],['5'],['6'],['+','op'],['=','eq'],
+  ['1'],['2'],['3'],['0'],['.']
+];
+const calc = [
+  {expr:'', hist:LS.get('hist0',[]), out:'0', eEl:'#expr0', oEl:'#out0', hEl:'#hist0', key:'hist0'},
+  {expr:'', hist:LS.get('hist1',[]), out:'0', eEl:'#expr1', oEl:'#out1', hEl:'#hist1', key:'hist1'}
+];
+let MEM = LS.get('mem',0);
+function buildKeys(el,defs,idx){
+  el.innerHTML='';
+  defs.forEach(([lab,cls])=>{
+    const b=document.createElement('button'); b.className='k'+(cls?' '+cls:''); b.textContent=lab;
+    b.onclick=ev=>{ ripple(b,ev); click(); press(lab,idx); };
+    el.appendChild(b);
+  });
+}
+buildKeys($('#keys0'),SIMPLE_KEYS,0);
+buildKeys($('#keys1'),SCI_KEYS,1);
+
+function render(i){
+  const c=calc[i];
+  $(c.eEl).textContent=c.expr||'\u00a0';
+  $(c.oEl).textContent=c.out;
+  $(c.hEl).innerHTML=c.hist.slice(-5).map(h=>`<span title="Réutiliser">${h}</span>`).join('');
+  $$(c.hEl+' span').forEach((s,k)=>s.onclick=()=>{ const v=c.hist.slice(-5)[k].split('=').pop().trim(); c.expr+=v; render(i); });
+  $('#memInfo').textContent='M = '+fmtNum(MEM);
+}
+function fail(i,msg){
+  const c=calc[i]; c.out='⚠︎ '+msg; $(c.oEl).classList.add('err','shake');
+  render(i); setTimeout(()=>$(c.oEl).classList.remove('shake'),420);
+  toast(msg,true);
+}
+function press(lab,i){
+  const c=calc[i]; const o=$(c.oEl); o.classList.remove('err');
+  const app=s=>c.expr+=s;
+  switch(lab){
+    case 'C': c.expr=''; c.out='0'; break;
+    case '⌫': c.expr=c.expr.slice(0,-1); break;
+    case '=': {
+      if(!c.expr.trim()){ break; }
+      try{
+        const v=compute(c.expr);
+        c.out=fmtNum(v);
+        c.hist.push(c.expr+' = '+c.out); c.hist=c.hist.slice(-20); LS.set(c.key,c.hist);
+        c.expr='';
+      }catch(e){ return fail(i, e.math? e.message : "Expression invalide"); }
+      break;
+    }
+    case '±': {
+      if(!c.expr) { c.expr='-'; break; }
+      c.expr = c.expr.startsWith('-') ? c.expr.slice(1) : '-'+c.expr; break;
+    }
+    case '×': app('*'); break;
+    case '÷': app('/'); break;
+    case '−': app('-'); break;
+    case 'x²': app('^2'); break;
+    case 'x³': app('^3'); break;
+    case 'xʸ': app('^'); break;
+    case '√': app('sqrt('); break;
+    case '³√': app('cbrt('); break;
+    case 'ʸ√x': app('^(1/'); break;
+    case 'n!': app('!'); break;
+    case 'mod': app(' mod '); break;
+    case 'π': app('pi'); break;
+    case 'e': app('e'); break;
+    case 'M+': try{ MEM+=compute(c.expr||c.out); }catch(e){} LS.set('mem',MEM); break;
+    case 'M-': try{ MEM-=compute(c.expr||c.out); }catch(e){} LS.set('mem',MEM); break;
+    case 'MR': app(String(MEM)); break;
+    case 'MC': MEM=0; LS.set('mem',0); break;
+    default:
+      if(FN1[lab]) app(lab+'(');
+      else app(lab);
+  }
+  render(i);
+}
+render(0); render(1);
+$('#btnAngle').onclick=e=>{ ANGLE = ANGLE==='DEG'?'RAD':'DEG'; e.target.textContent=ANGLE; LS.set('angle',ANGLE); draw(); };
+ANGLE = LS.get('angle','DEG'); $('#btnAngle').textContent=ANGLE;
+
+/* ---- Clavier physique ---- */
+document.addEventListener('keydown',e=>{
+  if(e.ctrlKey||e.metaKey){
+    const map={'1':0,'2':1,'3':2};
+    if(map[e.key]!==undefined){ e.preventDefault(); setMode(map[e.key]); return; }
+    if(e.key.toLowerCase()==='k'){ e.preventDefault(); setMode(2); openAcc(0); return; }
+    if(e.key.toLowerCase()==='i'){ e.preventDefault(); setMode(1); $$('#pane1 details')[0].open=true; $('#intF').focus(); return; }
+    if(e.key.toLowerCase()==='d'){ e.preventDefault(); setMode(1); $$('#pane1 details')[1].open=true; $('#derF').focus(); return; }
+    return;
+  }
+  const tag=(e.target.tagName||'').toLowerCase();
+  if(tag==='input'||tag==='textarea'||tag==='select') return;
+  if(MODE>1) return;
+  const i=MODE;
+  if(/^[0-9.]$/.test(e.key)) press(e.key,i);
+  else if('+-*/%^()'.includes(e.key)) press(e.key,i);
+  else if(e.key==='Enter'||e.key==='=') { e.preventDefault(); press('=',i); }
+  else if(e.key==='Backspace'){ e.preventDefault(); press('⌫',i); }
+  else if(e.key==='Escape') press('C',i);
+  else if(e.key==='!') press('n!',i);
+});
+function openAcc(k){ const d=$$('#pane2 details'); d.forEach((x,i)=>x.open = i===k); }
+</script>
