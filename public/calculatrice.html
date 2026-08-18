@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Nexus Calc — Calculatrice pro, grapheur & calcul symbolique</title>
+<meta name="description" content="Application tout-en-un : calculatrice simple et scientifique, grapheur, intégrales, dérivées symboliques, statistiques, matrices, convertisseur et équations différentielles." />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+/* ============ VARIABLES DE THEME ============ */
+:root{
+  --bg:#070a14; --bg2:#0d1224;
+  --glass:rgba(255,255,255,.06); --glass-strong:rgba(255,255,255,.11);
+  --stroke:rgba(255,255,255,.12); --stroke-soft:rgba(255,255,255,.07);
+  --fg:#eef2ff; --muted:#9aa5c4;
+  --accent:#5eead4; --accent2:#60a5fa; --accent3:#f472b6;
+  --danger:#fb7185; --ok:#4ade80;
+  --radius:18px; --radius-sm:12px;
+  --shadow:0 18px 50px rgba(0,0,0,.45);
+  --font:'Inter',system-ui,sans-serif; --mono:'JetBrains Mono',ui-monospace,monospace;
+}
+html.light{
+  --bg:#eef1fa; --bg2:#e2e8f6;
+  --glass:rgba(255,255,255,.62); --glass-strong:rgba(255,255,255,.82);
+  --stroke:rgba(15,23,42,.12); --stroke-soft:rgba(15,23,42,.07);
+  --fg:#0f172a; --muted:#4b5675;
+  --accent:#0d9488; --accent2:#2563eb; --accent3:#db2777;
+  --shadow:0 18px 40px rgba(30,41,59,.16);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;font-family:var(--font);color:var(--fg);background:var(--bg);overflow-x:hidden}
+/* fond mesh gradient animé */
+.mesh{position:fixed;inset:-30%;z-index:-1;filter:blur(70px);opacity:.85;
+  background:
+   radial-gradient(38% 38% at 20% 25%, color-mix(in oklab, var(--accent) 55%, transparent), transparent 70%),
+   radial-gradient(42% 42% at 80% 20%, color-mix(in oklab, var(--accent2) 55%, transparent), transparent 70%),
+   radial-gradient(45% 45% at 65% 85%, color-mix(in oklab, var(--accent3) 45%, transparent), transparent 70%),
+   linear-gradient(160deg,var(--bg),var(--bg2));
+  animation:drift 22s ease-in-out infinite alternate}
+@keyframes drift{0%{transform:translate3d(-3%,-2%,0) scale(1)}100%{transform:translate3d(4%,3%,0) scale(1.12)}}
+.wrap{max-width:1180px;margin:0 auto;padding:22px 16px 70px}
+header.top{display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;margin-bottom:18px}
+.brand{display:flex;align-items:center;gap:12px;font-weight:700;letter-spacing:-.02em;font-size:20px}
+.logo{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-size:19px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));color:#04121a;box-shadow:var(--shadow)}
+.card{background:var(--glass);border:1px solid var(--stroke);border-radius:var(--radius);
+  backdrop-filter:blur(18px) saturate(140%);-webkit-backdrop-filter:blur(18px) saturate(140%);box-shadow:var(--shadow)}
+.pad{padding:16px}
+/* segmented control */
+.modes{display:flex;gap:6px;padding:6px;position:relative}
+.modes button{position:relative;z-index:2;flex:1;border:0;background:transparent;color:var(--muted);
+  font:600 14px var(--font);padding:11px 14px;border-radius:13px;cursor:pointer;transition:color .25s}
+.modes button.on{color:#04121a}
+.slider-pill{position:absolute;z-index:1;top:6px;bottom:6px;border-radius:13px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));transition:all .3s cubic-bezier(.4,0,.2,1)}
+.icon-btn{border:1px solid var(--stroke);background:var(--glass);color:var(--fg);border-radius:12px;
+  padding:9px 13px;cursor:pointer;font:600 13px var(--font);transition:.2s}
+.icon-btn:hover{background:var(--glass-strong);transform:translateY(-1px)}
+/* panneaux de mode */
+.pane{display:none;animation:fadein .3s ease both}
+.pane.on{display:block}
+@keyframes fadein{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.grid2{display:grid;grid-template-columns:minmax(320px,420px) 1fr;gap:16px;align-items:start}
+@media(max-width:900px){.grid2{grid-template-columns:1fr}}
+/* écran calculatrice */
+.screen{padding:16px 18px;border-radius:var(--radius);background:var(--glass-strong);border:1px solid var(--stroke-soft)}
+.hist{font:400 12px var(--mono);color:var(--muted);min-height:16px;line-height:1.6;
+  max-height:96px;overflow:auto;display:flex;flex-direction:column;gap:2px;align-items:flex-end}
+.hist span{cursor:pointer}.hist span:hover{color:var(--accent)}
+.expr{font:400 15px var(--mono);color:var(--muted);text-align:right;min-height:22px;word-break:break-all;margin-top:6px}
+.out{font:600 clamp(28px,6vw,44px) var(--mono);text-align:right;word-break:break-all;letter-spacing:-.02em}
+.shake{animation:shake .4s}
+@keyframes shake{10%,90%{transform:translateX(-2px)}20%,80%{transform:translateX(4px)}30%,50%,70%{transform:translateX(-7px)}40%,60%{transform:translateX(7px)}}
+.err{color:var(--danger)}
+/* clavier */
+.keys{display:grid;gap:8px;margin-top:14px}
+.keys.simple{grid-template-columns:repeat(4,1fr)}
+.keys.sci{grid-template-columns:repeat(5,1fr)}
+.k{position:relative;overflow:hidden;border:1px solid var(--stroke-soft);background:var(--glass);
+  color:var(--fg);border-radius:14px;padding:14px 6px;font:600 15px var(--font);cursor:pointer;
+  transition:transform .08s,box-shadow .2s,background .2s;user-select:none}
+.k:hover{background:var(--glass-strong);box-shadow:0 0 0 1px var(--stroke),0 0 22px color-mix(in oklab,var(--accent) 28%,transparent)}
+.k:active{transform:scale(.94)}
+.k.fn{font-size:13px;color:var(--accent)}
+.k.op{color:var(--accent2)}
+.k.eq{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#04121a;border:0}
+.k.warn{color:var(--danger)}
+.ripple{position:absolute;border-radius:50%;background:rgba(255,255,255,.45);transform:scale(0);animation:rip .55s ease-out;pointer-events:none}
+@keyframes rip{to{transform:scale(3.2);opacity:0}}
+/* accordéons modules */
+.acc{margin-top:14px}
+.acc>summary{cursor:pointer;list-style:none;padding:14px 16px;font-weight:600;display:flex;justify-content:space-between;align-items:center}
+.acc>summary::-webkit-details-marker{display:none}
+.acc>summary::after{content:'+';color:var(--accent);font-size:20px}
+.acc[open]>summary::after{content:'−'}
+.acc .body{padding:0 16px 16px}
+label.f{display:block;font-size:12px;color:var(--muted);margin:8px 0 4px;font-weight:600}
+input,select,textarea{width:100%;padding:10px 12px;border-radius:12px;border:1px solid var(--stroke);
+  background:var(--glass);color:var(--fg);font:500 14px var(--mono);outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px color-mix(in oklab,var(--accent) 22%,transparent)}
+select option{background:var(--bg2);color:var(--fg)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.row>*{flex:1;min-width:120px}
+.btn{border:0;border-radius:12px;padding:11px 14px;font:600 14px var(--font);cursor:pointer;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));color:#04121a;transition:.2s;flex:0 0 auto}
+.btn:hover{filter:brightness(1.08);transform:translateY(-1px)}
+.btn.ghost{background:var(--glass);color:var(--fg);border:1px solid var(--stroke)}
+.btn.mini{padding:7px 10px;font-size:12px}
+.res{margin-top:12px;padding:12px 14px;border-radius:14px;background:var(--glass-strong);
+  border:1px solid var(--stroke-soft);font:600 15px var(--mono);word-break:break-word;white-space:pre-wrap}
+.badge{display:inline-block;font:600 11px var(--font);padding:3px 9px;border-radius:99px;
+  background:color-mix(in oklab,var(--accent) 22%,transparent);color:var(--accent);margin-right:6px}
+canvas{width:100%;border-radius:var(--radius);border:1px solid var(--stroke-soft);background:var(--glass-strong);display:block;touch-action:none}
+.flist{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+.fitem{display:flex;gap:8px;align-items:center;padding:8px 10px;border-radius:12px;background:var(--glass);border:1px solid var(--stroke-soft)}
+.fitem .sw{width:16px;height:16px;border-radius:5px;flex:0 0 auto}
+.fitem code{font:600 13px var(--mono);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fitem input[type=color]{width:34px;height:28px;padding:0;flex:0 0 auto;border-radius:8px}
+table{width:100%;border-collapse:collapse;font:500 13px var(--mono)}
+th,td{padding:7px 8px;border-bottom:1px solid var(--stroke-soft);text-align:right}
+th{color:var(--muted);font:600 11px var(--font);text-transform:uppercase;letter-spacing:.05em}
+.tscroll{max-height:260px;overflow:auto;margin-top:10px}
+.mgrid{display:grid;gap:5px;margin-top:8px}
+.mgrid input{padding:7px 4px;text-align:center;font-size:13px}
+.tip{position:fixed;pointer-events:none;padding:6px 9px;border-radius:9px;background:rgba(4,10,22,.92);
+  color:#fff;font:600 12px var(--mono);border:1px solid var(--stroke);z-index:99;display:none}
+.toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,20px);opacity:0;padding:12px 18px;border-radius:14px;
+  background:var(--glass-strong);border:1px solid var(--stroke);backdrop-filter:blur(14px);font:600 14px var(--font);
+  z-index:100;transition:.3s;box-shadow:var(--shadow);max-width:90vw;text-align:center}
+.toast.on{opacity:1;transform:translate(-50%,0)}
+.toast.bad{color:var(--danger)}
+.hint{font-size:12px;color:var(--muted);line-height:1.6}
+h3{margin:2px 0 6px;font-size:15px}
+.split{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:700px){.split{grid-template-columns:1fr}}
+.kpi{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin-top:10px}
+.kpi div{padding:10px;border-radius:12px;background:var(--glass);border:1px solid var(--stroke-soft)}
+.kpi b{display:block;font:600 16px var(--mono)}
+.kpi small{color:var(--muted);font-size:11px}
+</style>
+</head>
+<body>
+<div class="mesh"></div>
+<div class="wrap">
+  <header class="top">
+    <div class="brand"><div class="logo">∑</div> Nexus&nbsp;Calc</div>
+    <div class="row" style="flex:0 0 auto">
+      <button class="icon-btn" id="btnTheme">🌗 Thème</button>
+      <button class="icon-btn" id="btnSound">🔈 Son : off</button>
+    </div>
+  </header>
+
+  <div class="card modes" id="modes">
+    <div class="slider-pill" id="pill"></div>
+    <button data-mode="0" class="on">🧮 Simple</button>
+    <button data-mode="1">🔬 Scientifique</button>
+    <button data-mode="2">💼 Professionnel</button>
+  </div>
+
+  <!-- ============ MODE SIMPLE ============ -->
+  <section class="pane on" id="pane0" style="margin-top:16px">
+    <div class="card pad" style="max-width:460px;margin:0 auto">
+      <div class="screen">
+        <div class="hist" id="hist0"></div>
+        <div class="expr" id="expr0">&nbsp;</div>
+        <div class="out" id="out0">0</div>
+      </div>
+      <div class="keys simple" id="keys0"></div>
+    </div>
+  </section>
+
+  <!-- ============ MODE SCIENTIFIQUE ============ -->
+  <section class="pane" id="pane1" style="margin-top:16px">
+    <div class="grid2">
+      <div class="card pad">
+        <div class="screen">
+          <div class="hist" id="hist1"></div>
+          <div class="expr" id="expr1">&nbsp;</div>
+          <div class="out" id="out1">0</div>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button class="icon-btn" id="btnAngle">DEG</button>
+          <span class="hint" id="memInfo" style="flex:1;text-align:right">M = 0</span>
+        </div>
+        <div class="keys sci" id="keys1"></div>
+      </div>
+      <div>
+        <div class="card pad">
+          <h3>📈 Grapheur interactif</h3>
+          <div class="row">
+            <input id="fnInput" placeholder="ex: sin(x)*x  /  x^2-3  /  ln(x)" />
+            <button class="btn" id="fnAdd">Tracer</button>
+          </div>
+          <div class="flist" id="fnList"></div>
+          <canvas id="graph" height="420"></canvas>
+          <div class="row" style="margin-top:10px">
+            <button class="btn ghost mini" id="gZin">＋ Zoom</button>
+            <button class="btn ghost mini" id="gZout">－ Zoom</button>
+            <button class="btn ghost mini" id="gReset">⟲ Reset</button>
+            <button class="btn ghost mini" id="gGrid">Grille</button>
+            <button class="btn ghost mini" id="gPoints">Points remarquables</button>
+            <button class="btn ghost mini" id="gPng">⤓ PNG</button>
+          </div>
+          <p class="hint" style="margin:8px 0 0">Molette = zoom · glisser = déplacer · survol = coordonnées.</p>
+        </div>
+
+        <details class="acc card"><summary>∫ Intégrales définies</summary><div class="body">
+          <div class="row">
+            <input id="intF" placeholder="f(x) = x^2" />
+            <input id="intA" placeholder="a (ex: 0, -inf, pi)" style="max-width:150px"/>
+            <input id="intB" placeholder="b (ex: 1, inf, e)" style="max-width:150px"/>
+          </div>
+          <label class="f">Subdivisions (Simpson) : <span id="intNv">1000</span></label>
+          <input type="range" id="intN" min="100" max="10000" step="100" value="1000"/>
+          <div class="row" style="margin-top:10px"><button class="btn" id="intGo">Calculer & visualiser</button></div>
+          <div class="res" id="intRes">—</div>
+        </div></details>
+
+        <details class="acc card"><summary>d/dx Dérivées symboliques</summary><div class="body">
+          <div class="row">
+            <input id="derF" placeholder="f(x) = x^3*sin(x)" />
+            <input id="derX" placeholder="x₀ (optionnel)" style="max-width:150px"/>
+            <button class="btn" id="derGo">Dériver</button>
+          </div>
+          <div class="row" style="margin-top:8px">
+            <button class="btn ghost mini" id="derPlot">Tracer f et f′</button>
+            <button class="btn ghost mini" id="derCopy">Copier</button>
+          </div>
+          <div class="res" id="derRes">—</div>
+        </div></details>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ MODE PROFESSIONNEL ============ -->
+  <section class="pane" id="pane2" style="margin-top:16px">
+    <p class="hint" style="margin:0 0 12px">Le mode professionnel inclut tout le mode scientifique (calculatrice, grapheur, intégrales, dérivées) plus les modules ci-dessous.</p>
+
+    <details class="acc card" open><summary>🌍 Convertisseur universel d'unités</summary><div class="body">
+      <label class="f">Catégorie</label>
+      <select id="cvCat"></select>
+      <div class="split" style="margin-top:10px">
+        <div><label class="f">Valeur</label><input id="cvA" value="1"/><input list="cvL1" id="cvU1" style="margin-top:6px"/><datalist id="cvL1"></datalist></div>
+        <div><label class="f">Résultat</label><input id="cvB" readonly/><input list="cvL2" id="cvU2" style="margin-top:6px"/><datalist id="cvL2"></datalist></div>
+      </div>
+      <div class="row" style="margin-top:10px"><button class="btn ghost mini" id="cvSwap">⇅ Inverser</button>
+      <button class="btn ghost mini" id="cvSci">Notation scientifique</button></div>
+    </div></details>
+
+    <details class="acc card"><summary>📊 Statistiques & régression linéaire</summary><div class="body">
+      <label class="f">Données (séparées par espace, virgule ou retour ligne — collage Excel supporté)</label>
+      <textarea id="stData" rows="3">12 15 15 18 21 23 23 23 27 31 34 38</textarea>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" id="stGo">Analyser</button>
+        <button class="btn ghost mini" id="stCsv">⤓ CSV</button>
+        <span style="flex:1">Classes : <b id="stKv">7</b><input type="range" id="stK" min="3" max="30" value="7"/></span>
+      </div>
+      <div class="kpi" id="stKpi"></div>
+      <div class="split" style="margin-top:12px">
+        <canvas id="stHist" height="260"></canvas>
+        <canvas id="stBox" height="260"></canvas>
+      </div>
+      <h3 style="margin-top:16px">Régression linéaire</h3>
+      <label class="f">Paires x,y (une par ligne : « 1,2 »)</label>
+      <textarea id="regData" rows="3">1,2
+2,4.1
+3,6.2
+4,7.8
+5,10.3</textarea>
+      <div class="row" style="margin-top:8px"><button class="btn" id="regGo">Régresser</button></div>
+      <div class="res" id="regRes">—</div>
+      <canvas id="regCv" height="300" style="margin-top:10px"></canvas>
+    </div></details>
+
+    <details class="acc card"><summary>🔢 Calcul matriciel</summary><div class="body">
+      <div class="split">
+        <div><h3>Matrice A</h3><div class="row"><input type="number" id="ar" value="2" min="1" max="10"><input type="number" id="ac" value="2" min="1" max="10"></div><div class="mgrid" id="gA"></div></div>
+        <div><h3>Matrice B</h3><div class="row"><input type="number" id="br" value="2" min="1" max="10"><input type="number" id="bc" value="2" min="1" max="10"></div><div class="mgrid" id="gB"></div></div>
+      </div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn ghost mini" data-mop="add">A+B</button>
+        <button class="btn ghost mini" data-mop="sub">A−B</button>
+        <button class="btn ghost mini" data-mop="mul">A×B</button>
+        <button class="btn ghost mini" data-mop="scal">k·A</button>
+        <button class="btn ghost mini" data-mop="tA">Aᵀ</button>
+        <button class="btn ghost mini" data-mop="det">det(A)</button>
+        <button class="btn ghost mini" data-mop="inv">A⁻¹</button>
+        <button class="btn ghost mini" data-mop="eig">Valeurs propres</button>
+        <button class="btn ghost mini" data-mop="rank">Rang</button>
+        <button class="btn ghost mini" data-mop="trace">Trace</button>
+        <input id="mK" value="2" style="max-width:90px" title="scalaire k"/>
+      </div>
+      <div class="res" id="mRes">—</div>
+      <div class="row" style="margin-top:8px"><button class="btn ghost mini" id="mLatex">Copier en LaTeX</button></div>
+    </div></details>
+
+    <details class="acc card"><summary>⚙️ Programmation & bits</summary><div class="body">
+      <div class="row">
+        <div><label class="f">Décimal</label><input id="pDec" value="255"/></div>
+        <div><label class="f">Hexadécimal</label><input id="pHex"/></div>
+        <div><label class="f">Binaire</label><input id="pBin"/></div>
+        <div><label class="f">Octal</label><input id="pOct"/></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <input id="bitA" value="12"/><input id="bitB" value="10"/>
+        <select id="bitOp"><option>AND</option><option>OR</option><option>XOR</option><option>NOT A</option><option>A &lt;&lt; B</option><option>A &gt;&gt; B</option></select>
+        <button class="btn" id="bitGo">Calculer</button>
+      </div>
+      <div class="res" id="bitRes">—</div>
+    </div></details>
+
+    <details class="acc card"><summary>💰 Calculs financiers</summary><div class="body">
+      <div class="row">
+        <select id="finOp">
+          <option value="evo">Pourcentage d'évolution</option>
+          <option value="tva">TVA</option>
+          <option value="tri">Règle de trois</option>
+          <option value="si">Intérêt simple</option>
+          <option value="ci">Intérêt composé</option>
+        </select>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div><label class="f" id="lf1">Valeur initiale</label><input id="f1" value="100"/></div>
+        <div><label class="f" id="lf2">Valeur finale</label><input id="f2" value="125"/></div>
+        <div><label class="f" id="lf3">—</label><input id="f3" value="1"/></div>
+      </div>
+      <div class="row" style="margin-top:10px"><button class="btn" id="finGo">Calculer</button></div>
+      <div class="res" id="finRes">—</div>
+    </div></details>
+
+    <details class="acc card"><summary>🧭 Équations différentielles (Euler, Euler amélioré, RK4)</summary><div class="body">
+      <div class="row">
+        <div><label class="f">dy/dx = f(x,y)</label><input id="odeF" value="x - y"/></div>
+        <div><label class="f">x₀</label><input id="odeX0" value="0"/></div>
+        <div><label class="f">y₀</label><input id="odeY0" value="1"/></div>
+        <div><label class="f">b</label><input id="odeB" value="5"/></div>
+      </div>
+      <label class="f">Pas h : <span id="odeHv">0.1</span></label>
+      <input type="range" id="odeH" min="0.001" max="0.5" step="0.001" value="0.1"/>
+      <div class="row" style="margin-top:10px"><button class="btn" id="odeGo">Résoudre & animer</button></div>
+      <canvas id="odeCv" height="340" style="margin-top:10px"></canvas>
+      <div class="tscroll"><table id="odeTab"></table></div>
+    </div></details>
+  </section>
+
+  <p class="hint" style="text-align:center;margin-top:24px">
+    Raccourcis : Ctrl+1/2/3 modes · Ctrl+K convertisseur · Ctrl+I intégrales · Ctrl+D dérivées
+  </p>
+</div>
+<div class="tip" id="tip"></div>
+<div class="toast" id="toast"></div>
