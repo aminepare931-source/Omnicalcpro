@@ -781,3 +781,282 @@ document.addEventListener('keydown',e=>{
 });
 function openAcc(k){ const d=$$('#pane2 details'); d.forEach((x,i)=>x.open = i===k); }
 </script>
+<script>
+/* =========================================================================
+   GRAPHEUR : système monde/écran, zoom, pan, graduations intelligentes
+   ========================================================================= */
+const PALETTE=['#5eead4','#60a5fa','#f472b6','#fbbf24','#a78bfa'];
+let FNS = LS.get('fns',[{src:'sin(x)',color:PALETTE[0],on:true}]);
+let view = LS.get('view',{cx:0,cy:0,sx:60,sy:60}); // pixels par unité
+let showGrid=true, showPts=false;
+let overlay=null; // {type:'integral'|'ode', ...}
+const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+function fitCanvas(cv){
+  if(!cv) return;
+  const dpr=Math.min(window.devicePixelRatio||1,2);
+  const w=cv.clientWidth||600, h=+cv.getAttribute('height')||360;
+  cv.width=w*dpr; cv.height=h*dpr;
+  const ctx=cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0);
+  cv._w=w; cv._h=h;
+}
+const X2s=(x,cv)=> cv._w/2 + (x-view.cx)*view.sx;
+const Y2s=(y,cv)=> cv._h/2 - (y-view.cy)*view.sy;
+const s2X=(px,cv)=> view.cx + (px-cv._w/2)/view.sx;
+const s2Y=(py,cv)=> view.cy - (py-cv._h/2)/view.sy;
+
+function niceStep(pxPerUnit){
+  const target=80/pxPerUnit; const p=Math.pow(10,Math.floor(Math.log10(target)));
+  const m=target/p; return (m<1.5?1:m<3?2:m<7:5)*p;
+}
+function step(pxPerUnit){
+  const target=80/pxPerUnit, p=Math.pow(10,Math.floor(Math.log10(target))), m=target/p;
+  return (m<1.5?1:m<3?2:m<7?5:10)*p;
+}
+function draw(){
+  const cv=$('#graph'); if(!cv||!cv.clientWidth) return; if(!cv._w) fitCanvas(cv);
+  const ctx=cv.getContext('2d'), W=cv._w, H=cv._h;
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle=css('--glass-strong')||'rgba(255,255,255,.05)'; ctx.fillRect(0,0,W,H);
+  const fg=css('--fg')||'#fff', muted=css('--muted')||'#999';
+  const dx=step(view.sx), dy=step(view.sy);
+  // grille
+  if(showGrid){
+    ctx.lineWidth=1;
+    ctx.strokeStyle='rgba(128,150,190,.18)';
+    const x0=Math.floor(s2X(0,cv)/dx)*dx, x1=s2X(W,cv);
+    for(let x=x0;x<=x1;x+=dx){ const px=X2s(x,cv); ctx.beginPath(); ctx.moveTo(px,0); ctx.lineTo(px,H); ctx.stroke(); }
+    const y0=Math.floor(s2Y(H,cv)/dy)*dy, y1=s2Y(0,cv);
+    for(let y=y0;y<=y1;y+=dy){ const py=Y2s(y,cv); ctx.beginPath(); ctx.moveTo(0,py); ctx.lineTo(W,py); ctx.stroke(); }
+  }
+  // overlay (aire d'intégrale) sous les courbes
+  if(overlay && overlay.type==='integral') drawIntegral(ctx,cv);
+  // axes + graduations
+  ctx.strokeStyle=muted; ctx.lineWidth=1.4;
+  const ax=Y2s(0,cv), ay=X2s(0,cv);
+  ctx.beginPath(); ctx.moveTo(0,ax); ctx.lineTo(W,ax); ctx.moveTo(ay,0); ctx.lineTo(ay,H); ctx.stroke();
+  ctx.fillStyle=muted; ctx.font='11px JetBrains Mono, monospace';
+  ctx.textAlign='center'; ctx.textBaseline='top';
+  for(let x=Math.floor(s2X(0,cv)/dx)*dx;x<=s2X(W,cv);x+=dx){
+    if(Math.abs(x)<dx/4) continue;
+    const px=X2s(x,cv); ctx.beginPath(); ctx.moveTo(px,ax-4); ctx.lineTo(px,ax+4); ctx.stroke();
+    ctx.fillText(fmtTick(x),px,Math.min(Math.max(ax+6,2),H-16));
+  }
+  ctx.textAlign='right'; ctx.textBaseline='middle';
+  for(let y=Math.floor(s2Y(H,cv)/dy)*dy;y<=s2Y(0,cv);y+=dy){
+    if(Math.abs(y)<dy/4) continue;
+    const py=Y2s(y,cv); ctx.beginPath(); ctx.moveTo(ay-4,py); ctx.lineTo(ay+4,py); ctx.stroke();
+    ctx.fillText(fmtTick(y),Math.min(Math.max(ay-7,34),W-4),py);
+  }
+  // courbes
+  FNS.forEach(f=>{
+    if(!f.on) return;
+    let fx; try{ fx=compile(f.src); }catch(e){ return; }
+    plotFn(ctx,cv,fx,f.color,f.dash);
+    if(f.derived){ try{ const d=simplify(deriv(parse(f.src))); const g=x=>evalAst(d,{x});
+      plotFn(ctx,cv,g,f.color,true); }catch(e){} }
+    if(showPts) markPoints(ctx,cv,fx,f.color);
+  });
+  if(overlay && overlay.type==='curves') overlay.draw(ctx,cv);
+  // légende
+  ctx.textAlign='left'; ctx.textBaseline='top'; ctx.font='600 12px JetBrains Mono, monospace';
+  FNS.filter(f=>f.on).forEach((f,i)=>{ ctx.fillStyle=f.color; ctx.fillText('f'+(i+1)+'(x) = '+f.src, 12, 10+i*16); });
+}
+const fmtTick = v => Math.abs(v)>=1000||(Math.abs(v)<0.01&&v!==0) ? v.toExponential(1) : String(Math.round(v*1e6)/1e6);
+function plotFn(ctx,cv,fx,color,dash){
+  ctx.save(); ctx.beginPath(); ctx.strokeStyle=color; ctx.lineWidth=2.2;
+  ctx.setLineDash(dash?[6,5]:[]);
+  let started=false, prevY=null;
+  for(let px=0;px<=cv._w;px+=1){
+    const x=s2X(px,cv); let y;
+    try{ y=fx(x); }catch(e){ y=NaN; }
+    if(!isFinite(y)){ started=false; prevY=null; continue; }
+    const py=Y2s(y,cv);
+    if(prevY!==null && Math.abs(py-prevY)>cv._h*1.6){ started=false; } // asymptote
+    if(!started){ ctx.moveTo(px,py); started=true; } else ctx.lineTo(px,py);
+    prevY=py;
+  }
+  ctx.stroke(); ctx.restore();
+}
+function markPoints(ctx,cv,fx,color){
+  const pts=[]; const n=Math.min(1200,cv._w*2);
+  let px=fx(s2X(0,cv));
+  for(let i=1;i<=n;i++){
+    const xa=s2X((i-1)*cv._w/n,cv), xb=s2X(i*cv._w/n,cv);
+    let ya,yb; try{ ya=fx(xa); yb=fx(xb); }catch(e){ continue; }
+    if(!isFinite(ya)||!isFinite(yb)) continue;
+    if(ya*yb<0){ // zéro par bissection
+      let a=xa,b=xb; for(let k=0;k<50;k++){ const m=(a+b)/2; (fx(a)*fx(m)<=0)?b=m:a=m; }
+      pts.push({x:(a+b)/2,y:0,t:'zéro'});
+    }
+    const h=(xb-xa)||1e-6;
+    const d1=(fx(xa+h)-fx(xa-h))/(2*h), d2=(fx(xb+h)-fx(xb-h))/(2*h);
+    if(isFinite(d1)&&isFinite(d2)&&d1*d2<0){ const xm=(xa+xb)/2; pts.push({x:xm,y:fx(xm),t:'extremum'}); }
+  }
+  ctx.fillStyle=color;
+  pts.slice(0,80).forEach(p=>{ ctx.beginPath(); ctx.arc(X2s(p.x,cv),Y2s(p.y,cv),4,0,7); ctx.fill(); });
+}
+/* interactions */
+(function(){
+  const cv=$('#graph'); let drag=null;
+  cv.addEventListener('wheel',e=>{
+    e.preventDefault();
+    const dy=e.deltaY*(e.deltaMode===1?16:e.deltaMode===2?100:1);
+    const r=cv.getBoundingClientRect(), px=e.clientX-r.left, py=e.clientY-r.top;
+    const wx=s2X(px,cv), wy=s2Y(py,cv);
+    const k=Math.exp(-dy*0.0015);
+    view.sx=Math.min(1e6,Math.max(1e-4,view.sx*k)); view.sy=Math.min(1e6,Math.max(1e-4,view.sy*k));
+    view.cx = wx - (px-cv._w/2)/view.sx; view.cy = wy + (py-cv._h/2)/view.sy;
+    LS.set('view',view); draw();
+  },{passive:false});
+  cv.addEventListener('pointerdown',e=>{ drag={x:e.clientX,y:e.clientY,cx:view.cx,cy:view.cy}; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener('pointerup',()=>{ drag=null; LS.set('view',view); });
+  cv.addEventListener('pointermove',e=>{
+    const r=cv.getBoundingClientRect();
+    if(drag){ view.cx=drag.cx-(e.clientX-drag.x)/view.sx; view.cy=drag.cy+(e.clientY-drag.y)/view.sy; draw(); }
+    const x=s2X(e.clientX-r.left,cv), y=s2Y(e.clientY-r.top,cv);
+    const tip=$('#tip'); tip.style.display='block'; tip.style.left=(e.clientX+14)+'px'; tip.style.top=(e.clientY+14)+'px';
+    let extra='';
+    const f=FNS.find(f=>f.on);
+    if(f){ try{ const v=compile(f.src)(x); if(isFinite(v)) extra=' · f(x)='+fmtNum(v); }catch(e){} }
+    tip.textContent='x='+fmtNum(x)+' y='+fmtNum(y)+extra;
+  });
+  cv.addEventListener('pointerleave',()=>{ $('#tip').style.display='none'; });
+})();
+function renderFns(){
+  const list=$('#fnList'); list.innerHTML='';
+  FNS.forEach((f,i)=>{
+    const d=document.createElement('div'); d.className='fitem';
+    d.innerHTML=`<input type="checkbox" ${f.on?'checked':''} style="width:auto;flex:0 0 auto" title="Afficher"/>
+      <code>f${i+1}(x) = ${f.src}</code>
+      <input type="color" value="${f.color}"/>
+      <button class="btn ghost mini" title="Dérivée en pointillé">d/dx</button>
+      <button class="btn ghost mini">✕</button>`;
+    const [chk,,col]= d.querySelectorAll('input');
+    chk.onchange=()=>{ f.on=chk.checked; save(); };
+    col.oninput=()=>{ f.color=col.value; save(); };
+    const btns=d.querySelectorAll('button');
+    btns[0].onclick=()=>{ f.derived=!f.derived; save(); };
+    btns[1].onclick=()=>{ FNS.splice(i,1); save(); };
+    list.appendChild(d);
+  });
+  function save(){ LS.set('fns',FNS); renderFns(); draw(); }
+}
+$('#fnAdd').onclick=()=>{
+  const src=$('#fnInput').value.trim(); if(!src) return;
+  try{ compile(src)(1); }catch(e){ return toast(e.math?e.message:"Expression invalide",true); }
+  if(FNS.length>=5) FNS.shift();
+  FNS.push({src,color:PALETTE[FNS.length%5],on:true}); LS.set('fns',FNS);
+  $('#fnInput').value=''; renderFns(); draw(); toast('Courbe ajoutée');
+};
+$('#fnInput').addEventListener('keydown',e=>{ if(e.key==='Enter') $('#fnAdd').click(); });
+$('#gZin').onclick=()=>{ view.sx*=1.35; view.sy*=1.35; draw(); };
+$('#gZout').onclick=()=>{ view.sx/=1.35; view.sy/=1.35; draw(); };
+$('#gReset').onclick=()=>{ view={cx:0,cy:0,sx:60,sy:60}; overlay=null; LS.set('view',view); draw(); };
+$('#gGrid').onclick=()=>{ showGrid=!showGrid; draw(); };
+$('#gPoints').onclick=()=>{ showPts=!showPts; draw(); toast('Points remarquables : '+(showPts?'on':'off')); };
+$('#gPng').onclick=()=>{ const a=document.createElement('a'); a.download='graphe.png'; a.href=$('#graph').toDataURL('image/png'); a.click(); };
+renderFns();
+
+/* =========================================================================
+   INTÉGRALES DÉFINIES — méthode de Simpson
+   ========================================================================= */
+function simpson(fx,a,b,n){
+  if(n%2) n++;
+  const h=(b-a)/n; let s=0, bad=0;
+  const safe=x=>{ let v; try{ v=fx(x); }catch(e){ v=NaN; }
+    if(!isFinite(v)){ bad++; return 0; } return v; };
+  s = safe(a)+safe(b);
+  for(let i=1;i<n;i++) s += safe(a+i*h)*(i%2?4:2);
+  return {value:s*h/3, bad};
+}
+function parseBound(t){
+  const s=String(t).trim().toLowerCase().replace(/∞/g,'inf');
+  if(s==='-inf'||s==='-oo') return -Infinity;
+  if(s==='inf'||s==='+inf'||s==='oo') return Infinity;
+  return compute(s);
+}
+$('#intN').oninput=e=>$('#intNv').textContent=e.target.value;
+$('#intGo').onclick=()=>{
+  const src=$('#intF').value.trim()|| (FNS.find(f=>f.on)||{}).src;
+  if(!src) return toast("Saisissez une fonction",true);
+  let fx,a,b;
+  try{ fx=compile(src); a=parseBound($('#intA').value||'0'); b=parseBound($('#intB').value||'1'); }
+  catch(e){ return toast(e.math?e.message:"Bornes ou fonction invalides",true); }
+  if(isNaN(a)||isNaN(b)) return toast("Bornes invalides",true);
+  const n=+$('#intN').value;
+  let improper=false, A=a, B=b;
+  // intégrale impropre : substitution t = x/(1+|x|) sur les bornes infinies
+  let g=fx;
+  if(!isFinite(a)||!isFinite(b)){
+    improper=true;
+    A = isFinite(a) ? a/(1+Math.abs(a)) : (a<0?-1+1e-9:1-1e-9);
+    B = isFinite(b) ? b/(1+Math.abs(b)) : (b<0?-1+1e-9:1-1e-9);
+    g = t => { const x=t/(1-Math.abs(t)); const j=1/Math.pow(1-Math.abs(t),2); return fx(x)*j; };
+  }
+  const r=simpson(g,A,B,n);
+  let txt = `∫ de ${fmtNum(a)} à ${fmtNum(b)} de (${src}) dx  ≈  ${fmtNum(r.value)}\n`;
+  txt += `Méthode : Simpson · ${n} subdivisions${improper?' · substitution pour intégrale impropre':''}`;
+  if(r.bad>0) txt += `\n⚠︎ ${r.bad} point(s) non défini(s) ignoré(s) (asymptote possible) — résultat approché.`;
+  const P=primitive(src); if(P) txt += `\nPrimitive connue : F(x) = ${P} + C`;
+  $('#intRes').textContent=txt;
+  // visualisation animée de l'aire
+  if(isFinite(a)&&isFinite(b)){
+    if(!FNS.some(f=>f.src===src)){ if(FNS.length>=5) FNS.shift(); FNS.push({src,color:PALETTE[FNS.length%5],on:true}); renderFns(); }
+    animateIntegral(fx,Math.min(a,b),Math.max(a,b));
+  } else { overlay=null; draw(); }
+  toast('Intégrale ≈ '+fmtNum(r.value));
+};
+function animateIntegral(fx,a,b){
+  overlay={type:'integral',fx,a,b,p:0};
+  const t0=performance.now();
+  (function step(){
+    const k=Math.min(1,(performance.now()-t0)/700);
+    overlay.p=k; draw();
+    if(k<1) requestAnimationFrame(step);
+  })();
+}
+function drawIntegral(ctx,cv){
+  const {fx,a,b,p}=overlay; const end=a+(b-a)*p;
+  const n=400;
+  for(let i=0;i<n;i++){
+    const x1=a+(end-a)*i/n, x2=a+(end-a)*(i+1)/n;
+    let y1,y2; try{ y1=fx((x1+x2)/2); }catch(e){ continue; }
+    if(!isFinite(y1)) continue;
+    ctx.fillStyle = y1>=0 ? 'rgba(74,222,128,.32)' : 'rgba(251,113,133,.32)';
+    const px1=X2s(x1,cv), px2=X2s(x2,cv), py=Y2s(y1,cv), p0=Y2s(0,cv);
+    ctx.fillRect(px1, Math.min(py,p0), Math.max(px2-px1,1), Math.abs(p0-py));
+  }
+}
+
+/* =========================================================================
+   DÉRIVÉES SYMBOLIQUES
+   ========================================================================= */
+let lastDeriv=null;
+$('#derGo').onclick=()=>{
+  const src=$('#derF').value.trim(); if(!src) return toast("Saisissez f(x)",true);
+  try{
+    const ast=parse(src), d=simplify(deriv(ast));
+    lastDeriv={src,expr:toStr(d)};
+    let txt=`f(x)  = ${toStr(simplify(ast))}\nf′(x) = ${lastDeriv.expr}`;
+    const x0=$('#derX').value.trim();
+    if(x0){ const v=evalAst(d,{x:compute(x0)}); txt+=`\nf′(${x0}) = ${fmtNum(v)}`; }
+    const P=primitive(src); if(P) txt+=`\nPrimitive de f : F(x) = ${P} + C`;
+    $('#derRes').textContent=txt;
+  }catch(e){ $('#derRes').textContent='⚠︎ '+(e.math?e.message:"Expression invalide");
+    $('#derRes').classList.add('shake'); setTimeout(()=>$('#derRes').classList.remove('shake'),420);
+    toast(e.math?e.message:"Expression invalide",true); }
+};
+$('#derPlot').onclick=()=>{
+  const src=$('#derF').value.trim(); if(!src) return;
+  try{ compile(src)(1); }catch(e){ return toast("Expression invalide",true); }
+  FNS=FNS.filter(f=>f.src!==src);
+  if(FNS.length>=5) FNS.shift();
+  FNS.push({src,color:PALETTE[0],on:true,derived:true});
+  LS.set('fns',FNS); renderFns(); draw(); toast("f et f′ tracées (f′ en pointillé)");
+};
+$('#derCopy').onclick=async()=>{
+  if(!lastDeriv) return; try{ await navigator.clipboard.writeText("f'(x) = "+lastDeriv.expr); toast('Dérivée copiée ✓'); }
+  catch(e){ toast("Copie impossible",true); }
+};
+</script>
