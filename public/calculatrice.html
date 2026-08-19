@@ -928,7 +928,7 @@ function renderFns(){
       <input type="color" value="${f.color}"/>
       <button class="btn ghost mini" title="Dérivée en pointillé">d/dx</button>
       <button class="btn ghost mini">✕</button>`;
-    const [chk,,col]= d.querySelectorAll('input');
+    const [chk,col]= d.querySelectorAll('input');
     chk.onchange=()=>{ f.on=chk.checked; save(); };
     col.oninput=()=>{ f.color=col.value; save(); };
     const btns=d.querySelectorAll('button');
