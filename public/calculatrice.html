@@ -642,7 +642,7 @@ function ripple(el,ev){ const r=document.createElement('span'); r.className='rip
   r.style.top=((ev.clientY||b.top+b.height/2)-b.top-s/2)+'px'; el.appendChild(r); setTimeout(()=>r.remove(),560); }
 
 /* ---- Thème ---- */
-function setTheme(t){ document.documentElement.classList.toggle('light', t==='light'); LS.set('theme',t); draw(); drawStats(); }
+function setTheme(t){ document.documentElement.classList.toggle('light', t==='light'); LS.set('theme',t); if(typeof draw==='function') draw(); if(typeof drawStats==='function') drawStats(); }
 $('#btnTheme').onclick=()=>{ setTheme(document.documentElement.classList.contains('light')?'dark':'light'); click(); };
 setTheme(LS.get('theme','dark'));
 $('#btnSound').onclick=e=>{ SOUND=!SOUND; LS.set('sound',SOUND); e.target.textContent='🔈 Son : '+(SOUND?'on':'off'); click(); };
@@ -656,10 +656,10 @@ function setMode(m){
   $$('.pane').forEach((p,i)=>p.classList.toggle('on', i===m));
   const b=$$('#modes button')[m], box=$('#modes').getBoundingClientRect(), r=b.getBoundingClientRect();
   const pill=$('#pill'); pill.style.left=(r.left-box.left)+'px'; pill.style.width=r.width+'px';
-  if(m===1) requestAnimationFrame(()=>{ fitCanvas($('#graph')); draw(); });
+  if(m===1 && typeof draw==='function') requestAnimationFrame(()=>{ fitCanvas($('#graph')); draw(); });
 }
 $$('#modes button').forEach(b=>b.onclick=e=>{ setMode(+b.dataset.mode); ripple(b,e); click(); });
-window.addEventListener('resize',()=>{ setMode(MODE); fitCanvas($('#graph')); draw(); });
+window.addEventListener('resize',()=>{ setMode(MODE); if(typeof draw==='function'){ fitCanvas($('#graph')); draw(); } });
 
 /* =========================================================================
    CALCULATRICE (modes simple & scientifique)
@@ -755,7 +755,7 @@ function press(lab,i){
   render(i);
 }
 render(0); render(1);
-$('#btnAngle').onclick=e=>{ ANGLE = ANGLE==='DEG'?'RAD':'DEG'; e.target.textContent=ANGLE; LS.set('angle',ANGLE); draw(); };
+$('#btnAngle').onclick=e=>{ ANGLE = ANGLE==='DEG'?'RAD':'DEG'; e.target.textContent=ANGLE; LS.set('angle',ANGLE); if(typeof draw==='function') draw(); };
 ANGLE = LS.get('angle','DEG'); $('#btnAngle').textContent=ANGLE;
 
 /* ---- Clavier physique ---- */
