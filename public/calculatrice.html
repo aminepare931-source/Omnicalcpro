@@ -344,7 +344,103 @@ h3{margin:2px 0 6px;font-size:15px}
       <canvas id="odeCv" height="340" style="margin-top:10px"></canvas>
       <div class="tscroll"><table id="odeTab"></table></div>
     </div></details>
+
+    <details class="acc card"><summary>🎯 Solveur d'équations f(x) = 0</summary><div class="body">
+      <div class="row">
+        <input id="slvF" placeholder="ex: x^2-2  /  cos(x)-x" value="x^2-2"/>
+        <input id="slvA" value="-10" style="max-width:110px" title="borne min"/>
+        <input id="slvB" value="10" style="max-width:110px" title="borne max"/>
+        <button class="btn" id="slvGo">Résoudre</button>
+      </div>
+      <p class="hint">Balayage + bissection puis raffinement de Newton : toutes les racines de l'intervalle.</p>
+      <div class="res" id="slvRes">—</div>
+      <div class="row" style="margin-top:8px"><button class="btn ghost mini" id="slvPlot">Tracer la fonction</button></div>
+    </div></details>
+
+    <details class="acc card"><summary>🧩 Polynômes & systèmes linéaires</summary><div class="body">
+      <h3>Racines d'un polynôme</h3>
+      <label class="f">Coefficients du degré le plus élevé au constant (ex : 1 0 -2)</label>
+      <div class="row"><input id="polC" value="1 -3 2"/><button class="btn" id="polGo">Racines</button></div>
+      <div class="res" id="polRes">—</div>
+      <h3 style="margin-top:16px">Système A·X = B (Gauss avec pivot)</h3>
+      <label class="f">Une équation par ligne, coefficients puis second membre (ex : 2 1 5)</label>
+      <textarea id="sysData" rows="3">2 1 5
+1 -1 1</textarea>
+      <div class="row" style="margin-top:8px"><button class="btn" id="sysGo">Résoudre le système</button></div>
+      <div class="res" id="sysRes">—</div>
+    </div></details>
+
+    <details class="acc card"><summary>🎲 Probabilités & combinatoire</summary><div class="body">
+      <div class="row">
+        <select id="prbOp">
+          <option value="ncr">Combinaisons C(n,k)</option>
+          <option value="npr">Arrangements A(n,k)</option>
+          <option value="bin">Loi binomiale P(X=k) et P(X≤k)</option>
+          <option value="poi">Loi de Poisson P(X=k)</option>
+          <option value="nor">Loi normale P(X≤x)</option>
+        </select>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div><label class="f" id="pl1">n</label><input id="pb1" value="10"/></div>
+        <div><label class="f" id="pl2">k</label><input id="pb2" value="3"/></div>
+        <div><label class="f" id="pl3">p</label><input id="pb3" value="0.5"/></div>
+      </div>
+      <div class="row" style="margin-top:10px"><button class="btn" id="prbGo">Calculer</button></div>
+      <div class="res" id="prbRes">—</div>
+    </div></details>
+
+    <details class="acc card"><summary>🔍 Arithmétique : PGCD, PPCM, premiers, fractions</summary><div class="body">
+      <div class="row">
+        <div><label class="f">Entier a</label><input id="ntA" value="360"/></div>
+        <div><label class="f">Entier b</label><input id="ntB" value="84"/></div>
+        <button class="btn" id="ntGo">Analyser</button>
+      </div>
+      <div class="res" id="ntRes">—</div>
+      <label class="f">Décimal → fraction exacte</label>
+      <div class="row"><input id="ntF" value="0.375"/><button class="btn ghost mini" id="ntFrac">Convertir</button></div>
+      <div class="res" id="ntFracRes">—</div>
+    </div></details>
+
+    <details class="acc card"><summary>📋 Tableau de valeurs & Taylor & limites</summary><div class="body">
+      <h3>Tableau de valeurs</h3>
+      <div class="row">
+        <input id="tbF" value="sin(x)/x"/>
+        <input id="tbA" value="-3" style="max-width:100px" title="début"/>
+        <input id="tbB" value="3" style="max-width:100px" title="fin"/>
+        <input id="tbS" value="0.5" style="max-width:100px" title="pas"/>
+        <button class="btn" id="tbGo">Générer</button>
+      </div>
+      <div class="row" style="margin-top:8px"><button class="btn ghost mini" id="tbCsv">⤓ CSV</button></div>
+      <div class="tscroll"><table id="tbTab"></table></div>
+      <h3 style="margin-top:16px">Développement de Taylor</h3>
+      <div class="row">
+        <input id="tyF" value="exp(x)"/>
+        <input id="tyX" value="0" style="max-width:100px" title="autour de x₀"/>
+        <input id="tyN" value="5" style="max-width:100px" title="ordre"/>
+        <button class="btn" id="tyGo">Développer</button>
+      </div>
+      <div class="res" id="tyRes">—</div>
+      <h3 style="margin-top:16px">Limite numérique</h3>
+      <div class="row">
+        <input id="lmF" value="sin(x)/x"/>
+        <input id="lmX" value="0" style="max-width:130px" title="x→ (0, inf, -inf, pi…)"/>
+        <button class="btn" id="lmGo">Calculer la limite</button>
+      </div>
+      <div class="res" id="lmRes">—</div>
+    </div></details>
+
+    <details class="acc card"><summary>📅 Calculs de dates & heures</summary><div class="body">
+      <div class="split">
+        <div><label class="f">Date de début</label><input type="date" id="dtA"/></div>
+        <div><label class="f">Date de fin</label><input type="date" id="dtB"/></div>
+      </div>
+      <div class="row" style="margin-top:8px"><button class="btn" id="dtDiff">Différence</button>
+        <div><label class="f">± jours à ajouter</label><input id="dtAdd" value="90"/></div>
+        <button class="btn ghost mini" id="dtGo">Ajouter à la date de début</button></div>
+      <div class="res" id="dtRes">—</div>
+    </div></details>
   </section>
+
 
   <p class="hint" style="text-align:center;margin-top:24px">
     Raccourcis : Ctrl+1/2/3 modes · Ctrl+K convertisseur · Ctrl+I intégrales · Ctrl+D dérivées
