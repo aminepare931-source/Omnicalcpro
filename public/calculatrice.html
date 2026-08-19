@@ -809,7 +809,10 @@ function step(pxPerUnit){
   const target=80/pxPerUnit, p=Math.pow(10,Math.floor(Math.log10(target))), m=target/p;
   return (m<1.5?1:m<3?2:m<7?5:10)*p;
 }
-function draw(){
+/* Les modules d'analyse (graphe, intégrales, EDO) travaillent toujours en radians */
+function withRad(f){ const old=ANGLE; ANGLE='RAD'; try{ return f(); } finally{ ANGLE=old; } }
+function draw(){ return withRad(drawInner); }
+function drawInner(){
   const cv=$('#graph'); if(!cv||!cv.clientWidth) return; if(!cv._w) fitCanvas(cv);
   const ctx=cv.getContext('2d'), W=cv._w, H=cv._h;
   ctx.clearRect(0,0,W,H);
@@ -990,7 +993,7 @@ $('#intGo').onclick=()=>{
     B = isFinite(b) ? b/(1+Math.abs(b)) : (b<0?-1+1e-9:1-1e-9);
     g = t => { const x=t/(1-Math.abs(t)); const j=1/Math.pow(1-Math.abs(t),2); return fx(x)*j; };
   }
-  const r=simpson(g,A,B,n);
+  const r=withRad(()=>simpson(g,A,B,n));
   let txt = `∫ de ${fmtNum(a)} à ${fmtNum(b)} de (${src}) dx  ≈  ${fmtNum(r.value)}\n`;
   txt += `Méthode : Simpson · ${n} subdivisions${improper?' · substitution pour intégrale impropre':''}`;
   if(r.bad>0) txt += `\n⚠︎ ${r.bad} point(s) non défini(s) ignoré(s) (asymptote possible) — résultat approché.`;
@@ -1036,7 +1039,7 @@ $('#derGo').onclick=()=>{
     lastDeriv={src,expr:toStr(d)};
     let txt=`f(x)  = ${toStr(simplify(ast))}\nf′(x) = ${lastDeriv.expr}`;
     const x0=$('#derX').value.trim();
-    if(x0){ const v=evalAst(d,{x:compute(x0)}); txt+=`\nf′(${x0}) = ${fmtNum(v)}`; }
+    if(x0){ const v=withRad(()=>evalAst(d,{x:compute(x0)})); txt+=`\nf′(${x0}) = ${fmtNum(v)}`; }
     const P=primitive(src); if(P) txt+=`\nPrimitive de f : F(x) = ${P} + C`;
     $('#derRes').textContent=txt;
   }catch(e){ $('#derRes').textContent='⚠︎ '+(e.math?e.message:"Expression invalide");
@@ -1466,7 +1469,7 @@ function solveODE(f,x0,y0,b,h,method){
 $('#odeGo').onclick=()=>{
   let ast;
   try{ ast=parse($('#odeF').value); }catch(e){ return toast(e.math?e.message:"f(x,y) invalide",true); }
-  const f=(x,y)=>{ try{ return evalAst(ast,{x,y}); }catch(e){ return NaN; } };
+  const f=(x,y)=>{ try{ return withRad(()=>evalAst(ast,{x,y})); }catch(e){ return NaN; } };
   let x0,y0,b,h;
   try{ x0=compute($('#odeX0').value||'0'); y0=compute($('#odeY0').value||'0'); b=compute($('#odeB').value||'1'); }
   catch(e){ return toast("Paramètres invalides",true); }
