@@ -1,0 +1,16 @@
+{
+  "name": "Nexus Calc — Calculatrice pro & grapheur",
+  "short_name": "Nexus Calc",
+  "description": "Calculatrice simple et scientifique, grapheur, calcul symbolique, statistiques, matrices, probabilités et convertisseur — tout-en-un, hors-ligne.",
+  "start_url": "/calculatrice.html",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#070a14",
+  "theme_color": "#070a14",
+  "lang": "fr",
+  "categories": ["utilities", "education", "productivity"],
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
