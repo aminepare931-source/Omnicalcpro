@@ -3,6 +3,12 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="theme-color" content="#070a14" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link rel="apple-touch-icon" href="/icon.svg" />
+<link rel="manifest" href="/manifest.webmanifest" />
 <title>Nexus Calc — Calculatrice pro, grapheur & calcul symbolique</title>
 <meta name="description" content="Application tout-en-un : calculatrice simple et scientifique, grapheur, intégrales, dérivées symboliques, statistiques, matrices, convertisseur et équations différentielles." />
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -140,6 +146,51 @@ h3{margin:2px 0 6px;font-size:15px}
 .kpi div{padding:10px;border-radius:12px;background:var(--glass);border:1px solid var(--stroke-soft)}
 .kpi b{display:block;font:600 16px var(--mono)}
 .kpi small{color:var(--muted);font-size:11px}
+
+/* ============ OPTIMISATIONS MOBILE / APP ============ */
+@media (max-width:760px){
+  .wrap{padding:12px 10px calc(28px + env(safe-area-inset-bottom))}
+  .mesh{filter:blur(48px);opacity:.7;animation-duration:34s}
+  header.top{margin-bottom:12px;gap:8px}
+  .brand{font-size:17px}.logo{width:32px;height:32px;border-radius:10px;font-size:16px}
+  .icon-btn{padding:8px 11px;font-size:12px}
+  .modes{position:sticky;top:calc(6px + env(safe-area-inset-top));z-index:60;padding:5px}
+  .modes button{font-size:12px;padding:10px 6px;border-radius:12px}
+  .pad{padding:12px}
+  .card{backdrop-filter:blur(12px) saturate(130%);-webkit-backdrop-filter:blur(12px) saturate(130%)}
+  #pane0 .card{max-width:none}
+  .keys{gap:7px;margin-top:11px}
+  .k{padding:16px 4px;font-size:16px;border-radius:13px;min-height:52px}
+  .keys.sci .k{padding:12px 2px;font-size:13px;min-height:46px}
+  .k.fn{font-size:11.5px}
+  .screen{padding:12px 13px}
+  .out{font-size:clamp(26px,9vw,38px)}
+  .row{gap:8px}
+  .row>*{min-width:0}
+  .btn{padding:12px 14px}
+  .btn.mini{padding:9px 11px}
+  input,select,textarea{font-size:15px;padding:11px 12px}
+  .acc>summary{padding:14px 13px;font-size:14px}
+  .acc .body{padding:0 13px 14px}
+  canvas{height:260px!important}
+  #graph{height:300px!important}
+  .split{grid-template-columns:1fr}
+  .kpi{grid-template-columns:repeat(auto-fill,minmax(102px,1fr))}
+  .hscroll{display:flex;gap:8px;overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .hscroll::-webkit-scrollbar{display:none}
+  .hscroll>*{flex:0 0 auto;min-width:0}
+  .tip{display:none!important}
+  .toast{bottom:calc(20px + env(safe-area-inset-bottom))}
+  .fitem code{font-size:12px}
+}
+@media (hover:none){
+  .k:hover,.btn:hover,.icon-btn:hover{transform:none;filter:none}
+  .k:hover{background:var(--glass);box-shadow:none}
+}
+@media (prefers-reduced-motion:reduce){ .mesh{animation:none} }
+.k,.btn,.icon-btn,.acc>summary,.modes button{-webkit-tap-highlight-color:transparent;touch-action:manipulation}
+.out{cursor:pointer}
+#installBtn{display:none}
 </style>
 </head>
 <body>
@@ -149,6 +200,7 @@ h3{margin:2px 0 6px;font-size:15px}
     <div class="brand"><div class="logo">∑</div> Nexus&nbsp;Calc</div>
     <div class="row" style="flex:0 0 auto">
       <button class="icon-btn" id="btnTheme">🌗 Thème</button>
+      <button class="icon-btn" id="installBtn">⤓ Installer</button>
       <button class="icon-btn" id="btnSound">🔈 Son : off</button>
     </div>
   </header>
@@ -196,7 +248,7 @@ h3{margin:2px 0 6px;font-size:15px}
           </div>
           <div class="flist" id="fnList"></div>
           <canvas id="graph" height="420"></canvas>
-          <div class="row" style="margin-top:10px">
+          <div class="row hscroll" style="margin-top:10px">
             <button class="btn ghost mini" id="gZin">＋ Zoom</button>
             <button class="btn ghost mini" id="gZout">－ Zoom</button>
             <button class="btn ghost mini" id="gReset">⟲ Reset</button>
@@ -1607,6 +1659,375 @@ function drawODE(sols,a,b){
     if(prog<1) requestAnimationFrame(frame);
   })();
 }
+
+/* =========================================================================
+   NOUVEAUTÉS v2 — solveur, polynômes, systèmes, probabilités, arithmétique,
+   tableau de valeurs, Taylor, limites, dates + optimisations mobiles (PWA,
+   haptique, balayage entre modes, copie au tap, pinch-zoom du grapheur).
+   ========================================================================= */
+
+/* ---------- 1. SOLVEUR f(x) = 0 ---------- */
+function findRoots(f, a, b, samples){
+  const roots=[], n=samples||2000, h=(b-a)/n;
+  let px=a, pv=f(a);
+  for(let i=1;i<=n;i++){
+    const x=a+i*h; let v; try{ v=f(x); }catch(e){ v=NaN; }
+    if(isFinite(pv)&&isFinite(v)){
+      if(pv===0) roots.push(px);
+      else if(pv*v<0){
+        let lo=px, hi=x;
+        for(let k=0;k<80;k++){ const m=(lo+hi)/2; (f(lo)*f(m)<=0)?hi=m:lo=m; }
+        let r=(lo+hi)/2;
+        for(let k=0;k<12;k++){ // raffinement de Newton (dérivée centrée)
+          const e=Math.max(1e-9,Math.abs(r)*1e-8);
+          const d=(f(r+e)-f(r-e))/(2*e);
+          if(!isFinite(d)||Math.abs(d)<1e-14) break;
+          const nr=r-f(r)/d; if(!isFinite(nr)) break;
+          if(Math.abs(nr-r)<1e-14){ r=nr; break; } r=nr;
+        }
+        if(r>=a-1e-9&&r<=b+1e-9) roots.push(r);
+      }
+    }
+    px=x; pv=v;
+  }
+  return roots.filter((r,i)=>roots.findIndex(o=>Math.abs(o-r)<1e-6)===i).sort((x,y)=>x-y);
+}
+$('#slvGo').onclick=()=>{
+  let f;
+  try{ f=compile($('#slvF').value); }catch(e){ return toast(e.math?e.message:"f(x) invalide",true); }
+  let a,b;
+  try{ a=compute($('#slvA').value||'-10'); b=compute($('#slvB').value||'10'); }
+  catch(e){ return toast("Bornes invalides",true); }
+  if(!(b>a)) return toast("La borne max doit être supérieure à la borne min",true);
+  const rts=withRad(()=>findRoots(f,a,b));
+  if(!rts.length){ $('#slvRes').textContent='Aucune racine détectée sur ['+fmtNum(a)+' ; '+fmtNum(b)+']'; return; }
+  $('#slvRes').textContent=rts.map((r,i)=>`x${i+1} = ${fmtNum(r)}   (f = ${fmtNum(withRad(()=>f(r)))})`).join('\n');
+  buzz();
+};
+$('#slvPlot').onclick=()=>{
+  const src=$('#slvF').value.trim(); if(!src) return;
+  try{ compile(src)(1); }catch(e){ return toast("f(x) invalide",true); }
+  FNS.push({src,color:PALETTE[FNS.length%5],on:true}); if(FNS.length>5) FNS.shift();
+  LS.set('fns',FNS); renderFns(); setMode(1); showPts=true;
+  requestAnimationFrame(()=>{ fitCanvas($('#graph')); draw(); });
+  toast('Fonction tracée avec ses points remarquables');
+};
+
+/* ---------- 2. POLYNÔMES (Durand-Kerner) & SYSTÈMES LINÉAIRES ---------- */
+function polyRoots(c){
+  while(c.length&&Math.abs(c[0])<1e-14) c=c.slice(1);
+  const n=c.length-1; if(n<1) return [];
+  const a=c.map(v=>v/c[0]);
+  const ev=(re,im)=>{ // Horner complexe
+    let pr=0,pi=0;
+    for(let k=0;k<=n;k++){ const nr=pr*re-pi*im+a[k], ni=pr*im+pi*re; pr=nr; pi=ni; }
+    return [pr,pi];
+  };
+  let R=[]; for(let k=0;k<n;k++){ const t=0.4+0.9*k; R.push([Math.cos(t)*(1+0.3*k),Math.sin(t)*(1+0.3*k)]); }
+  for(let it=0;it<600;it++){
+    let move=0;
+    for(let i=0;i<n;i++){
+      const [pr,pi]=ev(R[i][0],R[i][1]);
+      let dr=1,di=0;
+      for(let j=0;j<n;j++){ if(j===i) continue;
+        const ar=R[i][0]-R[j][0], ai=R[i][1]-R[j][1];
+        const nr=dr*ar-di*ai, ni=dr*ai+di*ar; dr=nr; di=ni; }
+      const den=dr*dr+di*di; if(den<1e-300) continue;
+      const qr=(pr*dr+pi*di)/den, qi=(pi*dr-pr*di)/den;
+      R[i]=[R[i][0]-qr,R[i][1]-qi]; move=Math.max(move,Math.hypot(qr,qi));
+    }
+    if(move<1e-14) break;
+  }
+  return R;
+}
+$('#polGo').onclick=()=>{
+  const c=$('#polC').value.trim().split(/[\s,;]+/).filter(Boolean).map(v=>{ try{ return compute(v); }catch(e){ return NaN; } });
+  if(!c.length||c.some(v=>!isFinite(v))) return toast("Coefficients invalides",true);
+  if(c.length<2) return toast("Degré minimum : 1",true);
+  const R=polyRoots(c), n=c.length-1;
+  const deg=c.map((v,i)=>{ const p=n-i; if(v===0) return null;
+    return `${fmtNum(v)}${p>1?'x^'+p:p===1?'x':''}`; }).filter(Boolean).join(' + ').replace(/\+ -/g,'- ');
+  let t='P(x) = '+deg+'\ndegré '+n+'\n';
+  if(n===2){ const d=c[1]*c[1]-4*c[0]*c[2]; t+='Δ = '+fmtNum(d)+(d>0?' → 2 racines réelles':d===0?' → racine double':' → 2 racines complexes')+'\n'; }
+  t+=R.map((r,i)=>{ const re=Math.abs(r[0])<1e-10?0:r[0], im=Math.abs(r[1])<1e-8?0:r[1];
+    return `x${i+1} = ${fmtNum(re)}${im?(im>0?' + ':' − ')+fmtNum(Math.abs(im))+'i':''}`; }).join('\n');
+  $('#polRes').textContent=t; buzz();
+};
+$('#sysGo').onclick=()=>{
+  const rows=$('#sysData').value.trim().split(/\n+/).map(l=>l.trim().split(/[\s,;\t]+/).filter(Boolean)
+    .map(v=>{ try{ return compute(v); }catch(e){ return NaN; } })).filter(r=>r.length);
+  if(!rows.length) return toast("Aucune équation",true);
+  const n=rows.length;
+  if(rows.some(r=>r.length!==n+1||r.some(v=>!isFinite(v))))
+    return toast(`Chaque ligne doit contenir ${n} coefficients + 1 second membre`,true);
+  const A=rows.map(r=>r.slice());
+  for(let i=0;i<n;i++){
+    let p=i; for(let k=i+1;k<n;k++) if(Math.abs(A[k][i])>Math.abs(A[p][i])) p=k;
+    if(Math.abs(A[p][i])<1e-12){ $('#sysRes').textContent='Système singulier : pas de solution unique (déterminant nul).'; return; }
+    [A[i],A[p]]=[A[p],A[i]];
+    for(let k=0;k<n;k++){ if(k===i) continue; const f=A[k][i]/A[i][i];
+      for(let j=i;j<=n;j++) A[k][j]-=f*A[i][j]; }
+  }
+  $('#sysRes').textContent=A.map((r,i)=>`x${i+1} = ${fmtNum(Math.abs(r[n]/r[i])<1e-12?0:r[n]/r[i])}`).join('\n');
+  buzz();
+};
+
+/* ---------- 3. PROBABILITÉS & COMBINATOIRE ---------- */
+const lnFact = n => { let s=0; for(let i=2;i<=n;i++) s+=Math.log(i); return s; };
+const nCr = (n,k)=> (k<0||k>n)?0:Math.round(Math.exp(lnFact(n)-lnFact(k)-lnFact(n-k)));
+const nPr = (n,k)=> (k<0||k>n)?0:Math.round(Math.exp(lnFact(n)-lnFact(n-k)));
+const erf = x => { const s=Math.sign(x); x=Math.abs(x);
+  const t=1/(1+0.3275911*x);
+  return s*(1-(((((1.061405429*t-1.453152027)*t+1.421413741)*t-0.284496736)*t+0.254829592)*t)*Math.exp(-x*x)); };
+const normCdf = (x,mu,sg)=> 0.5*(1+erf((x-mu)/(sg*Math.SQRT2)));
+const PRB_LABELS={ ncr:['n','k','—'], npr:['n','k','—'], bin:['n','k','p (0–1)'],
+  poi:['λ (moyenne)','k','—'], nor:['x','μ (moyenne)','σ (écart-type)'] };
+function prbLabels(){ const L=PRB_LABELS[$('#prbOp').value];
+  $('#pl1').textContent=L[0]; $('#pl2').textContent=L[1]; $('#pl3').textContent=L[2]; }
+$('#prbOp').onchange=prbLabels; prbLabels();
+$('#prbGo').onclick=()=>{
+  const g=s=>{ try{ return compute($(s).value||'0'); }catch(e){ return NaN; } };
+  const a=g('#pb1'), b=g('#pb2'), c=g('#pb3'), op=$('#prbOp').value;
+  try{
+    if(![a,b].every(isFinite)) throw err("Valeurs invalides");
+    let t='';
+    if(op==='ncr'){ const n=Math.round(a),k=Math.round(b); if(n<0||k<0) throw err("n et k doivent être positifs");
+      t=`C(${n},${k}) = ${nCr(n,k).toLocaleString('fr-FR')}\nA(${n},${k}) = ${nPr(n,k).toLocaleString('fr-FR')}\n${n}! = ${fmtNum(fact(n))}`; }
+    if(op==='npr'){ const n=Math.round(a),k=Math.round(b);
+      t=`A(${n},${k}) = ${nPr(n,k).toLocaleString('fr-FR')}\nC(${n},${k}) = ${nCr(n,k).toLocaleString('fr-FR')}`; }
+    if(op==='bin'){ const n=Math.round(a),k=Math.round(b),p=c;
+      if(!(p>=0&&p<=1)) throw err("p doit être compris entre 0 et 1");
+      const pk=nCr(n,k)*Math.pow(p,k)*Math.pow(1-p,n-k);
+      let cum=0; for(let i=0;i<=k;i++) cum+=nCr(n,i)*Math.pow(p,i)*Math.pow(1-p,n-i);
+      t=`P(X = ${k}) = ${fmtNum(pk)}  (${fmtNum(pk*100)} %)\nP(X ≤ ${k}) = ${fmtNum(cum)}\nP(X > ${k}) = ${fmtNum(1-cum)}\nEspérance = ${fmtNum(n*p)} · Écart-type = ${fmtNum(Math.sqrt(n*p*(1-p)))}`; }
+    if(op==='poi'){ const l=a,k=Math.round(b); if(l<0) throw err("λ doit être positif");
+      const pk=Math.exp(-l+k*Math.log(l||1e-300)-lnFact(k));
+      let cum=0; for(let i=0;i<=k;i++) cum+=Math.exp(-l+i*Math.log(l||1e-300)-lnFact(i));
+      t=`P(X = ${k}) = ${fmtNum(pk)}\nP(X ≤ ${k}) = ${fmtNum(cum)}\nEspérance = variance = ${fmtNum(l)}`; }
+    if(op==='nor'){ const x=a,mu=b,sg=c||1; if(sg<=0) throw err("σ doit être strictement positif");
+      const z=(x-mu)/sg;
+      t=`z = ${fmtNum(z)}\nP(X ≤ ${fmtNum(x)}) = ${fmtNum(normCdf(x,mu,sg))}\nP(X > ${fmtNum(x)}) = ${fmtNum(1-normCdf(x,mu,sg))}\nDensité f(x) = ${fmtNum(Math.exp(-z*z/2)/(sg*Math.sqrt(2*Math.PI)))}`; }
+    $('#prbRes').textContent=t; buzz();
+  }catch(e){ $('#prbRes').textContent='⚠︎ '+e.message; toast(e.message,true); }
+};
+
+/* ---------- 4. ARITHMÉTIQUE : PGCD, PPCM, premiers, fractions ---------- */
+const gcd=(a,b)=>{ a=Math.abs(a); b=Math.abs(b); while(b){ [a,b]=[b,a%b]; } return a; };
+function factorize(n){ n=Math.abs(Math.trunc(n)); const f=[];
+  for(let p=2;p*p<=n;p++){ let e=0; while(n%p===0){ n/=p; e++; } if(e) f.push([p,e]); }
+  if(n>1) f.push([n,1]); return f; }
+const isPrime=n=>{ n=Math.abs(Math.trunc(n)); if(n<2) return false;
+  for(let p=2;p*p<=n;p++) if(n%p===0) return false; return true; };
+$('#ntGo').onclick=()=>{
+  let a,b; try{ a=Math.trunc(compute($('#ntA').value||'0')); b=Math.trunc(compute($('#ntB').value||'0')); }
+  catch(e){ return toast("Entiers invalides",true); }
+  if(!isFinite(a)||!isFinite(b)||Math.abs(a)>1e12||Math.abs(b)>1e12) return toast("Entiers trop grands ou invalides",true);
+  const g=gcd(a,b), l=g?Math.abs(a*b)/g:0;
+  const fs=x=>factorize(x).map(([p,e])=>p+(e>1?'^'+e:'')).join(' × ')||'—';
+  $('#ntRes').textContent=
+    `PGCD(${a}, ${b}) = ${g}\nPPCM(${a}, ${b}) = ${l}\n`+
+    `${a} = ${fs(a)}   ${isPrime(a)?'(premier)':''}\n${b} = ${fs(b)}   ${isPrime(b)?'(premier)':''}\n`+
+    `Fraction réduite : ${a}/${b} = ${g?(a/g)+'/'+(b/g):'—'}\nPremiers entre eux : ${g===1?'oui':'non'}`;
+  buzz();
+};
+$('#ntFrac').onclick=()=>{
+  let v; try{ v=compute($('#ntF').value||'0'); }catch(e){ return toast("Valeur invalide",true); }
+  if(!isFinite(v)) return toast("Valeur invalide",true);
+  // fractions continues
+  let h1=1,h0=0,k1=0,k0=1,x=v;
+  for(let i=0;i<40;i++){ const ai=Math.floor(x); [h1,h0]=[ai*h1+h0,h1]; [k1,k0]=[ai*k1+k0,k1];
+    if(Math.abs(v-h1/k1)<1e-12||k1>1e9) break; const fr=x-ai; if(Math.abs(fr)<1e-13) break; x=1/fr; }
+  const g=gcd(h1,k1)||1;
+  $('#ntFracRes').textContent=`${fmtNum(v)} = ${h1/g} / ${k1/g}\nerreur ≈ ${fmtNum(Math.abs(v-h1/k1))}\npourcentage = ${fmtNum(v*100)} %`;
+  buzz();
+};
+
+/* ---------- 5. TABLEAU DE VALEURS ---------- */
+let TBL=[];
+$('#tbGo').onclick=()=>{
+  let f; try{ f=compile($('#tbF').value); }catch(e){ return toast(e.math?e.message:"f(x) invalide",true); }
+  let a,b,s; try{ a=compute($('#tbA').value||'0'); b=compute($('#tbB').value||'1'); s=compute($('#tbS').value||'1'); }
+  catch(e){ return toast("Paramètres invalides",true); }
+  if(!isFinite(s)||s<=0) return toast("Le pas doit être strictement positif",true);
+  const n=Math.floor(Math.abs(b-a)/s); if(n>2000) return toast("Trop de lignes : augmentez le pas",true);
+  TBL=[];
+  for(let i=0;i<=n;i++){ const x=a+i*s*(b>=a?1:-1); let y; try{ y=withRad(()=>f(x)); }catch(e){ y=NaN; }
+    TBL.push([x,y]); }
+  $('#tbTab').innerHTML='<tr><th>x</th><th>f(x)</th></tr>'+
+    TBL.map(([x,y])=>`<tr><td>${fmtNum(x)}</td><td>${isFinite(y)?fmtNum(y):'non défini'}</td></tr>`).join('');
+  buzz();
+};
+$('#tbCsv').onclick=()=>{
+  if(!TBL.length) return toast("Générez d'abord le tableau",true);
+  const csv='x;f(x)\n'+TBL.map(r=>r.map(v=>String(v).replace('.',',')).join(';')).join('\n');
+  const a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download='tableau-valeurs.csv'; a.click(); toast('CSV exporté');
+};
+
+/* ---------- 6. SÉRIE DE TAYLOR ---------- */
+$('#tyGo').onclick=()=>{
+  let ast; try{ ast=parse($('#tyF').value); }catch(e){ return toast(e.math?e.message:"f(x) invalide",true); }
+  let x0,n; try{ x0=compute($('#tyX').value||'0'); n=Math.round(compute($('#tyN').value||'5')); }
+  catch(e){ return toast("Paramètres invalides",true); }
+  if(!(n>=1&&n<=12)) return toast("Ordre entre 1 et 12",true);
+  try{
+    const terms=[]; let cur=ast, fk=1;
+    for(let k=0;k<=n;k++){
+      const v=withRad(()=>evalAst(cur,{x:x0}));
+      if(!isFinite(v)) throw err("f n'est pas définie (ou dérivable) en x₀");
+      const c=v/fk;
+      if(Math.abs(c)>1e-12){
+        const p=k===0?'':(k===1?(x0?`(x ${x0>0?'−':'+'} ${fmtNum(Math.abs(x0))})`:'x'):(x0?`(x ${x0>0?'−':'+'} ${fmtNum(Math.abs(x0))})^${k}`:`x^${k}`));
+        terms.push((c>0&&terms.length?'+ ':c<0?'− ':'')+fmtNum(Math.abs(c))+(p?'·'+p:''));
+      }
+      if(k<n){ cur=simplify(deriv(cur)); fk*=(k+1); }
+    }
+    const poly=terms.join(' ')||'0';
+    $('#tyRes').textContent=`Taylor d'ordre ${n} autour de x₀ = ${fmtNum(x0)} :\nP(x) = ${poly}\n+ O((x−x₀)^${n+1})`;
+    lastTaylor=poly; buzz();
+  }catch(e){ $('#tyRes').textContent='⚠︎ '+e.message; toast(e.message,true); }
+};
+let lastTaylor=null;
+
+/* ---------- 7. LIMITES NUMÉRIQUES ---------- */
+$('#lmGo').onclick=()=>{
+  let f; try{ f=compile($('#lmF').value); }catch(e){ return toast(e.math?e.message:"f(x) invalide",true); }
+  const raw=($('#lmX').value||'0').trim().toLowerCase();
+  const ev=x=>{ try{ const v=withRad(()=>f(x)); return isFinite(v)?v:NaN; }catch(e){ return NaN; } };
+  try{
+    let t='';
+    if(raw==='inf'||raw==='+inf'||raw==='-inf'){
+      const s=raw.startsWith('-')?-1:1, seq=[1e2,1e3,1e4,1e5,1e6,1e7].map(x=>ev(s*x)).filter(isFinite);
+      if(!seq.length) throw err("Limite non évaluable");
+      const last=seq[seq.length-1], prev=seq[seq.length-2];
+      const cvg=Math.abs(last-prev)<1e-6*Math.max(1,Math.abs(last));
+      t=`x → ${s<0?'−':'+'}∞\nvaleurs : ${seq.slice(-3).map(fmtNum).join('  →  ')}\nlimite ≈ ${cvg?fmtNum(last):(Math.abs(last)>1e8?(last>0?'+∞':'−∞'):fmtNum(last)+' (convergence lente)')}`;
+    }else{
+      const x0=compute(raw);
+      const L=[1e-2,1e-3,1e-4,1e-5,1e-6].map(h=>ev(x0-h)).filter(isFinite);
+      const R=[1e-2,1e-3,1e-4,1e-5,1e-6].map(h=>ev(x0+h)).filter(isFinite);
+      if(!L.length&&!R.length) throw err("Limite non évaluable en ce point");
+      const l=L[L.length-1], r=R[R.length-1], at=ev(x0);
+      const same=isFinite(l)&&isFinite(r)&&Math.abs(l-r)<1e-5*Math.max(1,Math.abs(r));
+      t=`x → ${fmtNum(x0)}\nlimite à gauche  ≈ ${isFinite(l)?fmtNum(l):'—'}\nlimite à droite ≈ ${isFinite(r)?fmtNum(r):'—'}\n`+
+        (same?`limite = ${fmtNum((l+r)/2)}`:'les limites à gauche et à droite diffèrent → pas de limite')+
+        `\nf(x₀) = ${isFinite(at)?fmtNum(at):'non définie'}${same&&isFinite(at)&&Math.abs(at-(l+r)/2)<1e-6?'  → continue':''}`;
+    }
+    $('#lmRes').textContent=t; buzz();
+  }catch(e){ $('#lmRes').textContent='⚠︎ '+e.message; toast(e.message,true); }
+};
+
+/* ---------- 8. DATES & HEURES ---------- */
+(function(){
+  const iso=d=>d.toISOString().slice(0,10);
+  const today=new Date(); $('#dtA').value=iso(today);
+  $('#dtB').value=iso(new Date(today.getTime()+30*864e5));
+  const D=s=>{ const d=new Date(s+'T00:00:00'); return isNaN(d)?null:d; };
+  const FMT=new Intl.DateTimeFormat('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+  $('#dtDiff').onclick=()=>{
+    const a=D($('#dtA').value), b=D($('#dtB').value);
+    if(!a||!b) return toast("Dates invalides",true);
+    const days=Math.round((b-a)/864e5), abs=Math.abs(days);
+    let wd=0; for(let i=0;i<abs;i++){ const d=new Date(Math.min(a,b)+i*864e5); const k=d.getDay(); if(k!==0&&k!==6) wd++; }
+    const y=Math.floor(abs/365.2425);
+    $('#dtRes').textContent=
+      `${FMT.format(a)}\n→ ${FMT.format(b)}\n\n${days} jours (${abs} en valeur absolue)\n`+
+      `${wd} jours ouvrés · ${Math.floor(abs/7)} semaines\n`+
+      `≈ ${fmtNum(abs/30.437)} mois · ≈ ${fmtNum(abs/365.2425)} ans\n`+
+      `${abs*24} heures · ${abs*1440} minutes`;
+    buzz();
+  };
+  $('#dtGo').onclick=()=>{
+    const a=D($('#dtA').value); if(!a) return toast("Date de début invalide",true);
+    let n; try{ n=Math.round(compute($('#dtAdd').value||'0')); }catch(e){ return toast("Nombre de jours invalide",true); }
+    const r=new Date(a.getTime()+n*864e5);
+    $('#dtRes').textContent=`${FMT.format(a)}\n${n>=0?'+':'−'} ${Math.abs(n)} jours\n→ ${FMT.format(r)}  (${r.toISOString().slice(0,10)})\nsemaine ISO ${(()=>{const d=new Date(r);d.setHours(0,0,0,0);d.setDate(d.getDate()+3-((d.getDay()+6)%7));const w1=new Date(d.getFullYear(),0,4);return 1+Math.round(((d-w1)/864e5-3+((w1.getDay()+6)%7))/7);})()}`;
+    buzz();
+  };
+})();
+
+/* ---------- 9. MOBILE : haptique, balayage, copie au tap, pinch-zoom ---------- */
+let HAPTIC = LS.get('haptic',true);
+function buzz(ms){ if(HAPTIC && navigator.vibrate) try{ navigator.vibrate(ms||8); }catch(e){} }
+document.addEventListener('pointerdown',e=>{
+  if(e.target.closest('.k,.btn,.icon-btn,.modes button')) buzz(6);
+},{passive:true});
+
+/* copie du résultat en tapant l'écran */
+['#out0','#out1'].forEach(sel=>{
+  const el=$(sel); if(!el) return;
+  el.title='Toucher pour copier le résultat';
+  el.onclick=async()=>{
+    const v=el.textContent.trim(); if(!v||v.startsWith('⚠')) return;
+    try{ await navigator.clipboard.writeText(v); toast('Résultat copié : '+v); buzz(12); }
+    catch(e){ toast("Copie impossible sur cet appareil",true); }
+  };
+});
+
+/* balayage horizontal pour changer de mode */
+(function(){
+  let sx=0,sy=0,t0=0,valid=false;
+  document.addEventListener('touchstart',e=>{
+    if(e.touches.length!==1){ valid=false; return; }
+    const tg=e.target;
+    valid=!tg.closest('canvas,input,textarea,select,.tscroll,.hist,.hscroll');
+    sx=e.touches[0].clientX; sy=e.touches[0].clientY; t0=Date.now();
+  },{passive:true});
+  document.addEventListener('touchend',e=>{
+    if(!valid||!e.changedTouches.length) return;
+    const dx=e.changedTouches[0].clientX-sx, dy=e.changedTouches[0].clientY-sy;
+    if(Date.now()-t0>600) return;
+    if(Math.abs(dx)<70||Math.abs(dy)>Math.abs(dx)*0.7) return;
+    const next=Math.min(2,Math.max(0,MODE+(dx<0?1:-1)));
+    if(next!==MODE){ setMode(next); buzz(14); window.scrollTo({top:0,behavior:'smooth'}); }
+  },{passive:true});
+})();
+
+/* pinch-to-zoom + double-tap reset sur le grapheur */
+(function(){
+  const cv=$('#graph'); if(!cv) return;
+  const pts=new Map(); let base=null, lastTap=0;
+  cv.addEventListener('pointerdown',e=>{
+    pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pts.size===2){ const [a,b]=[...pts.values()];
+      base={d:Math.hypot(a.x-b.x,a.y-b.y),sx:view.sx,sy:view.sy,
+        cx:view.cx,cy:view.cy,mx:(a.x+b.x)/2,my:(a.y+b.y)/2}; }
+    const now=Date.now();
+    if(e.pointerType==='touch'&&now-lastTap<300){ view={cx:0,cy:0,sx:60,sy:60}; LS.set('view',view); draw(); buzz(12); }
+    lastTap=now;
+  });
+  cv.addEventListener('pointermove',e=>{
+    if(!pts.has(e.pointerId)) return;
+    pts.set(e.pointerId,{x:e.clientX,y:e.clientY});
+    if(pts.size===2&&base){
+      const [a,b]=[...pts.values()], d=Math.hypot(a.x-b.x,a.y-b.y);
+      const k=Math.min(50,Math.max(0.02,d/(base.d||1)));
+      const r=cv.getBoundingClientRect(), px=base.mx-r.left, py=base.my-r.top;
+      const wx=base.cx+(px-cv._w/2)/base.sx, wy=base.cy-(py-cv._h/2)/base.sy;
+      view.sx=Math.min(1e6,Math.max(1e-4,base.sx*k)); view.sy=Math.min(1e6,Math.max(1e-4,base.sy*k));
+      view.cx=wx-(px-cv._w/2)/view.sx; view.cy=wy+(py-cv._h/2)/view.sy;
+      draw();
+    }
+  });
+  const up=e=>{ pts.delete(e.pointerId); if(pts.size<2){ base=null; LS.set('view',view); } };
+  cv.addEventListener('pointerup',up); cv.addEventListener('pointercancel',up);
+})();
+
+/* ---------- 10. PWA : installation & fonctionnement hors-ligne ---------- */
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
+}
+(function(){
+  const btn=$('#installBtn'); let prompt=null;
+  window.addEventListener('beforeinstallprompt',e=>{ e.preventDefault(); prompt=e; btn.style.display='inline-block'; });
+  btn.onclick=async()=>{
+    if(!prompt) return toast("Utilisez le menu du navigateur → « Ajouter à l'écran d'accueil »");
+    prompt.prompt(); const r=await prompt.userChoice.catch(()=>null);
+    if(r&&r.outcome==='accepted'){ toast('Nexus Calc installé 🎉'); btn.style.display='none'; }
+    prompt=null;
+  };
+  window.addEventListener('appinstalled',()=>{ btn.style.display='none'; });
+})();
 
 /* ---- Initialisation finale ---- */
 setMode(MODE);
