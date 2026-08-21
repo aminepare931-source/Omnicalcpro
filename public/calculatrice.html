@@ -499,6 +499,124 @@ h3{margin:2px 0 6px;font-size:15px}
         <button class="btn ghost mini" id="dtGo">Ajouter à la date de début</button></div>
       <div class="res" id="dtRes">—</div>
     </div></details>
+
+    <details class="acc card"><summary>ℂ Nombres complexes</summary><div class="body">
+      <div class="row">
+        <div><label class="f">z₁ (a+bi)</label><input id="cxA" value="3+4i"/></div>
+        <div><label class="f">z₂</label><input id="cxB" value="1-2i"/></div>
+        <select id="cxOp"><option value="add">z₁+z₂</option><option value="sub">z₁−z₂</option><option value="mul">z₁×z₂</option><option value="div">z₁÷z₂</option><option value="pol">Forme polaire de z₁</option><option value="pow">z₁ⁿ (n = partie réelle de z₂)</option></select>
+        <button class="btn" id="cxGo">Calculer</button>
+      </div>
+      <div class="res" id="cxRes">—</div>
+    </div></details>
+
+    <details class="acc card"><summary>➗ Vecteurs 2D / 3D</summary><div class="body">
+      <div class="row">
+        <div><label class="f">u (x y z)</label><input id="vcA" value="1 2 3"/></div>
+        <div><label class="f">v (x y z)</label><input id="vcB" value="-2 0 5"/></div>
+        <button class="btn" id="vcGo">Analyser</button>
+      </div>
+      <p class="hint">Norme, produit scalaire, produit vectoriel, angle, colinéarité et projection.</p>
+      <div class="res" id="vcRes">—</div>
+    </div></details>
+
+    <details class="acc card"><summary>📐 Résolution de triangles</summary><div class="body">
+      <p class="hint">Laissez vides les valeurs inconnues (au moins 3 données dont un côté). Angles en degrés.</p>
+      <div class="row">
+        <div><label class="f">a</label><input id="trA"/></div>
+        <div><label class="f">b</label><input id="trB"/></div>
+        <div><label class="f">c</label><input id="trC"/></div>
+        <div><label class="f">A°</label><input id="trAA"/></div>
+        <div><label class="f">B°</label><input id="trBB"/></div>
+        <div><label class="f">C°</label><input id="trCC"/></div>
+        <button class="btn" id="trGo">Résoudre</button>
+      </div>
+      <div class="res" id="trRes">—</div>
+    </div></details>
+
+    <details class="acc card"><summary>📈 Régressions avancées (poly, exp, puissance, log)</summary><div class="body">
+      <label class="f">Paires x,y (une par ligne)</label>
+      <textarea id="rgData" rows="3">1,2.7
+2,7.4
+3,20
+4,54
+5,148</textarea>
+      <div class="row" style="margin-top:8px">
+        <select id="rgType"><option value="poly">Polynomiale</option><option value="exp">Exponentielle y=a·e^(bx)</option><option value="pow">Puissance y=a·x^b</option><option value="log">Logarithmique y=a+b·ln(x)</option></select>
+        <div><label class="f">Degré (poly)</label><input id="rgDeg" value="2" style="max-width:90px"/></div>
+        <button class="btn" id="rgGo">Ajuster</button>
+        <button class="btn ghost mini" id="rgPlot">Tracer le modèle</button>
+      </div>
+      <div class="res" id="rgRes">—</div>
+    </div></details>
+
+    <details class="acc card"><summary>🧪 Statistiques inférentielles (IC, test t, χ²)</summary><div class="body">
+      <label class="f">Échantillon 1</label>
+      <textarea id="inf1" rows="2">12 14 15 16 18 19 21</textarea>
+      <label class="f">Échantillon 2 (test t à deux échantillons / effectifs observés pour χ²)</label>
+      <textarea id="inf2" rows="2">13 17 18 20 22 24 25</textarea>
+      <div class="row" style="margin-top:8px">
+        <select id="infOp"><option value="ic">Intervalle de confiance (moyenne)</option><option value="t1">Test t (échantillon 1 vs μ₀)</option><option value="t2">Test t (2 échantillons)</option><option value="chi">Test χ² d'ajustement (uniforme)</option></select>
+        <div><label class="f">Niveau / μ₀</label><input id="infP" value="0.95" style="max-width:110px"/></div>
+        <button class="btn" id="infGo">Calculer</button>
+      </div>
+      <div class="res" id="infRes">—</div>
+    </div></details>
+
+    <details class="acc card"><summary>Σ Sommes, produits et suites</summary><div class="body">
+      <div class="row">
+        <input id="sqF" value="1/k^2" placeholder="expression en k"/>
+        <div><label class="f">k de</label><input id="sqA" value="1" style="max-width:90px"/></div>
+        <div><label class="f">à</label><input id="sqB" value="100" style="max-width:90px"/></div>
+        <select id="sqOp"><option value="sum">Σ somme</option><option value="prod">Π produit</option><option value="list">Liste des termes</option></select>
+        <button class="btn" id="sqGo">Calculer</button>
+      </div>
+      <div class="res" id="sqRes">—</div>
+    </div></details>
+
+    <details class="acc card"><summary>🏦 Prêt & amortissement</summary><div class="body">
+      <div class="row">
+        <div><label class="f">Capital</label><input id="lnC" value="200000"/></div>
+        <div><label class="f">Taux annuel %</label><input id="lnR" value="3.5"/></div>
+        <div><label class="f">Durée (années)</label><input id="lnY" value="20"/></div>
+        <button class="btn" id="lnGo">Calculer</button>
+        <button class="btn ghost mini" id="lnCsv">⤓ CSV</button>
+      </div>
+      <div class="res" id="lnRes">—</div>
+      <div class="tscroll"><table id="lnTab"></table></div>
+    </div></details>
+
+    <details class="acc card"><summary>⏱ Calculs de temps sexagésimal (HH:MM:SS)</summary><div class="body">
+      <div class="row">
+        <input id="tmA" value="1:25:30"/>
+        <select id="tmOp"><option value="+">+</option><option value="-">−</option><option value="*">× facteur</option><option value="/">÷ facteur</option></select>
+        <input id="tmB" value="0:45:15"/>
+        <button class="btn" id="tmGo">Calculer</button>
+      </div>
+      <p class="hint">Additionnez des durées, ou multipliez/divisez par un nombre. Conversion en heures décimales incluse.</p>
+      <div class="res" id="tmRes">—</div>
+    </div></details>
+
+    <details class="acc card"><summary>🏛 Chiffres romains & nombres en lettres</summary><div class="body">
+      <div class="row">
+        <div><label class="f">Nombre</label><input id="rmN" value="2026"/></div>
+        <button class="btn" id="rmGo">Convertir</button>
+        <div><label class="f">Romain → nombre</label><input id="rmR" value="MCMXCIV"/></div>
+        <button class="btn ghost mini" id="rmBack">Décoder</button>
+      </div>
+      <div class="res" id="rmRes">—</div>
+    </div></details>
+
+    <details class="acc card"><summary>🧠 Variables & mémoires nommées</summary><div class="body">
+      <p class="hint">Définissez des variables réutilisables dans toutes les expressions (calculatrice, grapheur, intégrales…). <b>ans</b> contient toujours le dernier résultat.</p>
+      <div class="row">
+        <div><label class="f">Nom</label><input id="vrName" value="r" style="max-width:120px"/></div>
+        <div><label class="f">Valeur ou expression</label><input id="vrVal" value="2.5"/></div>
+        <button class="btn" id="vrSet">Enregistrer</button>
+        <button class="btn ghost mini" id="vrClear">Tout effacer</button>
+      </div>
+      <div class="res" id="vrRes">—</div>
+    </div></details>
   </section>
 
 
