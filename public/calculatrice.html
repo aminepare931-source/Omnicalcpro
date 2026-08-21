@@ -220,6 +220,11 @@ h3{margin:2px 0 6px;font-size:15px}
         <div class="expr" id="expr0">&nbsp;</div>
         <div class="out" id="out0">0</div>
       </div>
+      <div class="row" style="margin-top:10px;justify-content:flex-end">
+        <button class="icon-btn" data-copy-expr="0" title="Copier le calcul (Ctrl+Maj+C)">⧉ Copier calcul</button>
+        <button class="icon-btn" data-copy-out="0" title="Copier le résultat (Ctrl+C)">＝ Copier résultat</button>
+        <button class="icon-btn" data-paste="0" title="Coller un calcul (Ctrl+V)">📋 Coller</button>
+      </div>
       <div class="keys simple" id="keys0"></div>
     </div>
   </section>
@@ -235,6 +240,9 @@ h3{margin:2px 0 6px;font-size:15px}
         </div>
         <div class="row" style="margin-top:10px">
           <button class="icon-btn" id="btnAngle">DEG</button>
+          <button class="icon-btn" data-copy-expr="1" title="Copier le calcul (Ctrl+Maj+C)">⧉</button>
+          <button class="icon-btn" data-copy-out="1" title="Copier le résultat (Ctrl+C)">＝</button>
+          <button class="icon-btn" data-paste="1" title="Coller un calcul (Ctrl+V)">📋</button>
           <span class="hint" id="memInfo" style="flex:1;text-align:right">M = 0</span>
         </div>
         <div class="keys sci" id="keys1"></div>
@@ -911,6 +919,7 @@ document.addEventListener('keydown',e=>{
   if(e.ctrlKey||e.metaKey){
     const map={'1':0,'2':1,'3':2};
     if(map[e.key]!==undefined){ e.preventDefault(); setMode(map[e.key]); return; }
+    if(e.shiftKey&&e.key.toLowerCase()==='c'){ if(MODE<2){ e.preventDefault(); copyExpr(MODE); } return; }
     if(e.key.toLowerCase()==='k'){ e.preventDefault(); setMode(2); openAcc(0); return; }
     if(e.key.toLowerCase()==='i'){ e.preventDefault(); setMode(1); $$('#pane1 details')[0].open=true; $('#intF').focus(); return; }
     if(e.key.toLowerCase()==='d'){ e.preventDefault(); setMode(1); $$('#pane1 details')[1].open=true; $('#derF').focus(); return; }
@@ -928,6 +937,81 @@ document.addEventListener('keydown',e=>{
   else if(e.key==='!') press('n!',i);
 });
 function openAcc(k){ const d=$$('#pane2 details'); d.forEach((x,i)=>x.open = i===k); }
+
+/* ---- Copier / Coller des calculs ---- */
+/* Nettoie un texte collé pour le rendre compréhensible par le parser */
+function sanitizePaste(txt){
+  if(!txt) return '';
+  let s=String(txt).split('\n')[0];            // une seule ligne
+  if(s.includes('=')) s=s.split('=')[0];       // « 2+3 = 5 » → « 2+3 »
+  s=s.replace(/[×✕✖·⋅]/g,'*').replace(/[÷∕]/g,'/')
+     .replace(/[−–—]/g,'-').replace(/[’'\u00a0\u202f\s]/g,'')
+     .replace(/[πΠ]/g,'pi').replace(/√/g,'sqrt').replace(/,(\d)/g,'.$1')
+     .replace(/[\[\{]/g,'(').replace(/[\]\}]/g,')')
+     .replace(/\^\((\d+)\)/g,'^$1');
+  return s.replace(/[^0-9a-zA-Z_.+\-*/%^!()]/g,'');
+}
+async function copyText(v,msg){
+  if(!v) return;
+  try{ await navigator.clipboard.writeText(v); }
+  catch(e){
+    const ta=document.createElement('textarea'); ta.value=v; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    let ok=false; try{ ok=document.execCommand('copy'); }catch(_){}
+    ta.remove();
+    if(!ok) return toast("Copie impossible sur cet appareil",true);
+  }
+  toast(msg||('Copié : '+v)); buzz(12);
+}
+function copyExpr(i){
+  const c=calc[i];
+  const v=c.expr.trim() || (c.hist.slice(-1)[0]||'');
+  if(!v) return toast("Rien à copier",true);
+  copyText(v,'Calcul copié : '+v);
+}
+function pasteInto(i,raw){
+  const s=sanitizePaste(raw);
+  if(!s) return toast("Rien d'exploitable dans le presse-papier",true);
+  const c=calc[i]; c.expr+=s; c.out='0'; $(c.oEl).classList.remove('err'); render(i);
+  toast('Collé : '+s); buzz(10);
+}
+async function pasteFromClipboard(i){
+  try{
+    const t=await navigator.clipboard.readText();
+    pasteInto(i,t);
+  }catch(e){
+    const t=window.prompt('Collez votre calcul ici (Ctrl+V) :','');
+    if(t!==null) pasteInto(i,t);
+  }
+}
+$$('[data-copy-expr]').forEach(b=>b.onclick=()=>copyExpr(+b.dataset.copyExpr));
+$$('[data-copy-out]').forEach(b=>b.onclick=()=>{
+  const v=calc[+b.dataset.copyOut].out;
+  if(!v||v.startsWith('⚠')) return toast("Aucun résultat à copier",true);
+  copyText(v,'Résultat copié : '+v);
+});
+$$('[data-paste]').forEach(b=>b.onclick=()=>pasteFromClipboard(+b.dataset.paste));
+['#expr0','#expr1'].forEach((sel,i)=>{
+  const el=$(sel); if(!el) return;
+  el.style.cursor='pointer'; el.title='Toucher pour copier le calcul';
+  el.onclick=()=>copyExpr(i);
+});
+/* Ctrl+C / Ctrl+Maj+C / Ctrl+V natifs dans les modes calculatrice */
+document.addEventListener('copy',e=>{
+  if(MODE>1) return;
+  const tag=(e.target.tagName||'').toLowerCase();
+  if(tag==='input'||tag==='textarea'||(window.getSelection()+'').trim()) return;
+  const c=calc[MODE], v=c.out&&!c.out.startsWith('⚠')? c.out : c.expr;
+  if(!v) return;
+  e.preventDefault(); e.clipboardData.setData('text/plain',v); toast('Copié : '+v);
+});
+document.addEventListener('paste',e=>{
+  if(MODE>1) return;
+  const tag=(e.target.tagName||'').toLowerCase();
+  if(tag==='input'||tag==='textarea') return;
+  e.preventDefault();
+  pasteInto(MODE, e.clipboardData.getData('text'));
+});
 </script>
 <script>
 /* =========================================================================
