@@ -919,6 +919,7 @@ document.addEventListener('keydown',e=>{
   if(e.ctrlKey||e.metaKey){
     const map={'1':0,'2':1,'3':2};
     if(map[e.key]!==undefined){ e.preventDefault(); setMode(map[e.key]); return; }
+    if(e.shiftKey&&e.key.toLowerCase()==='c'){ if(MODE<2){ e.preventDefault(); copyExpr(MODE); } return; }
     if(e.key.toLowerCase()==='k'){ e.preventDefault(); setMode(2); openAcc(0); return; }
     if(e.key.toLowerCase()==='i'){ e.preventDefault(); setMode(1); $$('#pane1 details')[0].open=true; $('#intF').focus(); return; }
     if(e.key.toLowerCase()==='d'){ e.preventDefault(); setMode(1); $$('#pane1 details')[1].open=true; $('#derF').focus(); return; }
@@ -1000,7 +1001,7 @@ document.addEventListener('copy',e=>{
   if(MODE>1) return;
   const tag=(e.target.tagName||'').toLowerCase();
   if(tag==='input'||tag==='textarea'||(window.getSelection()+'').trim()) return;
-  const c=calc[MODE], v=e.shiftKey? (c.expr||c.out) : (c.out||c.expr);
+  const c=calc[MODE], v=c.out&&!c.out.startsWith('⚠')? c.out : c.expr;
   if(!v) return;
   e.preventDefault(); e.clipboardData.setData('text/plain',v); toast('Copié : '+v);
 });
